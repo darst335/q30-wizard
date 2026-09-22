@@ -2,11 +2,21 @@
 'require view';
 
 // 首页「快速设置」入口卡片
-// 命名约束：/www/luci-static/resources/view/status/include/*.js 由 index.js 按字典序
-// 通过 require('view.status.include.' + 文件名) 加载，文件名必须是合法 JS 标识符片段。
-// 取 "wizard" 可排在 10_system.js 之前（'w' > '1'），因此总是显示在首页最上方。
+// 加载机制：view/status/index.js 会 fs.list 本目录，对所有 .js 文件按名字典序
+// require('view.status.include.' + 文件名)，并在每个轮询周期调用 load().catch(...)。
+// 注意两点：
+//   1. 必须自定义 load() 且返回 Promise —— 基类默认 load() 返回 undefined，
+//      invokeIncludesLoad 里 `includes[i].load().catch(...)` 会抛
+//      "Cannot read properties of undefined (reading 'catch')"。
+//   2. 文件名必须是合法 JS 标识符片段（不能带数字前缀以外的符号）。
 
 return view.extend({
+	title: '',
+
+	load: function () {
+		return Promise.resolve();
+	},
+
 	render: function () {
 		var card = E('div', { 'class': 'cbi-section', 'id': 'q30-wizard-entry' }, [
 			E('h3', {}, [ _('快速设置向导') ]),
@@ -16,26 +26,25 @@ return view.extend({
 			E('div', { 'style': 'margin-top:12px' }, [
 				E('a', {
 					'class': 'btn cbi-button cbi-button-apply',
-					'href': L.url('admin', 'system', 'q30-wizard'),
+					'href': '/cgi-bin/wizard?op=page',
+					'target': '_blank',
 					'style': 'text-decoration:none'
 				}, [ _('打开快速设置向导') ])
 			])
 		]);
 
-		// 尚未完成首次设置时追加提示条
-		fetch(L.url('cgi-bin', 'wizard') + '?op=state', { cache: 'no-store' })
+		fetch('/cgi-bin/wizard?op=state', { cache: 'no-store' })
 			.then(function (r) { return r.json(); })
 			.then(function (s) {
-				if (s && !s.done && s.firstboot) {
+				if (s && !s.done && s.firstboot)
 					card.insertBefore(
 						E('div', { 'class': 'alert-message warning' }, [
 							_('路由器尚未完成首次设置，建议立即运行快速设置向导。')
 						]),
 						card.firstChild
 					);
-				}
 			})
-			.catch(function () { /* 静默失败：入口按钮本身始终可用 */ });
+			.catch(function () {});
 
 		return card;
 	},
