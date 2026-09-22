@@ -20,4 +20,10 @@ if [ -n "$mac" ]; then
 	done
 	uci commit wireless
 fi
+# 默认管理密码 admin（root，LuCI 与管理页面同源）
+printf 'admin\nadmin\n' | passwd root >/dev/null 2>&1
+# 默认不启用 SSH（需要时在系统管理或专家模式里手动开）
+uci -q set dropbear.@dropbear[0].enable='0'
+uci -q commit dropbear
+/etc/init.d/dropbear disable 2>/dev/null
 exit 0
