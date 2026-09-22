@@ -1,6 +1,6 @@
 #!/bin/sh
 # Q30 quick wizard: first-boot hook
-chmod 755 /www/cgi-bin/wizard 2>/dev/null
+chmod 755 /www/cgi-bin/* 2>/dev/null
 # 首次启动标记：让向导页知道这是「从未配置过」的新机器
 if [ ! -f /etc/config/wizard ]; then
 	printf "config main 'main'\n\toption done '0'\n\toption firstboot '1'\n" > /etc/config/wizard
@@ -22,8 +22,8 @@ if [ -n "$mac" ]; then
 fi
 # 默认管理密码 admin（root，LuCI 与管理页面同源）
 printf 'admin\nadmin\n' | passwd root >/dev/null 2>&1
-# 默认不启用 SSH（需要时在系统管理或专家模式里手动开）
-uci -q set dropbear.@dropbear[0].enable='0'
+# 默认启用 SSH（root 密码同管理密码，仅 LAN 可达；需要关闭时在专家模式里关）
+uci -q set dropbear.@dropbear[0].enable='1'
 uci -q commit dropbear
-/etc/init.d/dropbear disable 2>/dev/null
+/etc/init.d/dropbear enable 2>/dev/null
 exit 0
