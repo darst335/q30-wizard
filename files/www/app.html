@@ -137,6 +137,18 @@ table.clients .st.off { background:#c3cad6; }
 .mnode .tag { display:inline-block; font-size:11px; background:#2f6fd6; color:#fff; border-radius:4px; padding:1px 7px; margin-left:6px; vertical-align:1px; }
 .mnode .tag.sub { background:#2e9e5b; }
 .mlink { width:2px; height:20px; background:#9db6dd; margin-left:32px; }
+
+/* ---------- 高级参数折叠区 ---------- */
+details.adv { margin-top:4px; border:1px dashed #d4dae5; border-radius:8px; padding:10px 14px; background:#fafbfe; }
+details.adv summary { cursor:pointer; font-size:13px; color:#2f6fd6; user-select:none; }
+details.adv[open] summary { margin-bottom:12px; }
+/* ---------- DDNS / 防火墙 ---------- */
+table.fwdt { width:100%; border-collapse:collapse; font-size:13px; margin-bottom:10px; }
+table.fwdt th { text-align:left; color:#7d879c; font-weight:500; padding:7px 8px; border-bottom:1px solid #e8ecf3; }
+table.fwdt td { padding:8px; border-bottom:1px solid #f2f4f8; }
+.fwrow { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+.fwrow .field { margin-bottom:0; flex:1 1 110px; }
+.fwrow .field.w-sm { flex:0 0 96px; }
 </style>
 </head>
 <body>
@@ -169,6 +181,7 @@ table.clients .st.off { background:#c3cad6; }
       <div class="nav" data-p="mesh"><i class="ico">🕸</i>Mesh 组网</div>
       <div class="nav" data-p="relay"><i class="ico">📡</i>无线桥接</div>
       <div class="nav" data-p="lan"><i class="ico">☷</i>局域网设置</div>
+      <div class="nav" data-p="advnet"><i class="ico">🛡</i>DDNS / 防火墙</div>
       <div class="sep"></div>
       <div class="nav" data-p="system"><i class="ico">⚙</i>系统管理</div>
       <div class="nav" data-p="wizard"><i class="ico">✨</i>快速设置向导</div>
@@ -219,6 +232,7 @@ table.clients .st.off { background:#c3cad6; }
             <label class="radio-card on"><input type="radio" name="wanp" value="dhcp" checked>自动获得 IP（推荐）</label>
             <label class="radio-card"><input type="radio" name="wanp" value="pppoe">宽带拨号上网（PPPoE）</label>
             <label class="radio-card"><input type="radio" name="wanp" value="static">手动输入 IP（静态）</label>
+            <label class="radio-card"><input type="radio" name="wanp" value="ap">有线 AP 模式</label>
           </div>
           <div id="wan-dhcp" class="hint" style="margin-bottom:14px">光猫/上级路由会自动分配网络参数，无需填写。适用于大多数家庭宽带。</div>
           <div id="wan-pppoe" style="display:none">
@@ -231,6 +245,12 @@ table.clients .st.off { background:#c3cad6; }
             <div class="field"><label>子网掩码</label><input type="text" id="wan-mask" placeholder="255.255.255.0"></div>
             <div class="field"><label>网关</label><input type="text" id="wan-gw" placeholder="例：192.168.10.1"></div>
             <div class="field"><label>DNS 服务器（可留空）</label><input type="text" id="wan-dns" placeholder="223.5.5.5 114.114.114.114"></div>
+          </div>
+          <div id="wan-ap" style="display:none">
+            <div class="hint" style="margin-bottom:14px">把本路由器当作<strong>无线交换机（AP）</strong>使用：上级路由器/光猫的网线接 LAN 口（不再使用 WAN 口），本机只负责提供 Wi-Fi。适合已有路由器只想增强 Wi-Fi 覆盖的场景。</div>
+            <div class="field"><label>本机管理 IP（与上级路由器同网段，留空 = 保持当前 IP）</label><input type="text" id="wan-apip" placeholder="例：192.168.1.2"></div>
+            <div class="field"><label>DHCP 服务 <span style="float:right"><label class="switch"><input type="checkbox" id="wan-apdhcp"><i></i></label></span></label>
+              <div class="hint">推荐关闭（由上级路由器统一分配 IP）。关闭后终端 IP 全部由上级路由器分配。</div></div>
           </div>
           <div class="msg" id="wan-msg"></div>
           <button class="btn" id="wan-save">保存并应用</button>
@@ -253,6 +273,14 @@ table.clients .st.off { background:#c3cad6; }
               <option value="none">开放（不加密，不推荐）</option>
             </select></div>
           <div class="field"><label>隐藏网络 <input type="checkbox" id="wf-hid0" style="accent-color:#2f6fd6"></label></div>
+          <details class="adv"><summary>高级参数（信道 / 频宽 / 发射功率）</summary>
+            <div class="field"><label>信道（默认自动选择）</label>
+              <select id="wf-chan0"><option value="auto">自动</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option>13</option></select></div>
+            <div class="field"><label>频宽</label>
+              <select id="wf-bw0"><option value="">默认</option><option value="20">20 MHz（稳定）</option><option value="40">40 MHz（速度快）</option></select></div>
+            <div class="field"><label>发射功率</label>
+              <select id="wf-txp0"><option value="">最大（默认）</option><option value="20">20 dBm</option><option value="17">17 dBm（覆盖略小）</option><option value="14">14 dBm（小户型）</option><option value="10">10 dBm（节能）</option></select></div>
+          </details>
         </div>
         <div class="card" id="wf-1-card">
           <h3>5G Wi-Fi <span style="float:right"><label class="switch"><input type="checkbox" id="wf-en1" checked><i></i></label></span></h3>
@@ -266,6 +294,14 @@ table.clients .st.off { background:#c3cad6; }
               <option value="none">开放（不加密，不推荐）</option>
             </select></div>
           <div class="field"><label>隐藏网络 <input type="checkbox" id="wf-hid1" style="accent-color:#2f6fd6"></label></div>
+          <details class="adv"><summary>高级参数（信道 / 频宽 / 发射功率）</summary>
+            <div class="field"><label>信道（默认自动选择）</label>
+              <select id="wf-chan1"><option value="auto">自动</option><option>36</option><option>40</option><option>44</option><option>48</option><option>52</option><option>56</option><option>60</option><option>64</option><option>149</option><option>153</option><option>157</option><option>161</option><option>165</option></select></div>
+            <div class="field"><label>频宽</label>
+              <select id="wf-bw1"><option value="">默认</option><option value="20">20 MHz（稳定）</option><option value="40">40 MHz</option><option value="80">80 MHz（最快）</option></select></div>
+            <div class="field"><label>发射功率</label>
+              <select id="wf-txp1"><option value="">最大（默认）</option><option value="23">23 dBm</option><option value="20">20 dBm（覆盖略小）</option><option value="17">17 dBm（小户型）</option><option value="10">10 dBm（节能）</option></select></div>
+          </details>
         </div>
         <div class="msg" id="wifi-msg"></div>
         <button class="btn" id="wifi-save">保存并应用</button>
@@ -336,6 +372,68 @@ table.clients .st.off { background:#c3cad6; }
           </div>
           <div class="msg" id="lan-msg"></div>
           <button class="btn" id="lan-save">保存并应用</button>
+        </div>
+      </div>
+
+      <!-- DDNS / 防火墙 -->
+      <div class="page" id="pg-advnet">
+        <h2 class="pg">DDNS / 防火墙</h2>
+        <div class="card">
+          <h3>DDNS 动态域名<span style="float:right"><label class="switch"><input type="checkbox" id="ddns-en"><i></i></label></span></h3>
+          <div class="hint" style="margin-bottom:14px">宽带是动态公网 IP 时，通过 DDNS 绑定一个固定域名，在外即可随时用域名访问家里的设备。需要宽带具备<strong>公网 IP</strong>（可联系运营商申请）。</div>
+          <div id="ddns-opts" style="display:none">
+            <div class="field"><label>服务商</label>
+              <select id="ddns-svc">
+                <option value="dyn.com">DynDNS</option>
+                <option value="noip.com">No-IP</option>
+                <option value="3322.org">3322.org（公云）</option>
+                <option value="oray.com">花生壳（Oray）</option>
+                <option value="cloudflare.com-v4">Cloudflare（密码填 API Token）</option>
+                <option value="custom">自定义更新 URL</option>
+              </select></div>
+            <div class="field" id="ddns-url-row" style="display:none"><label>更新 URL（DDNS 服务商提供的接口地址）</label><input type="text" id="ddns-url" placeholder="https://example.com/nic/update?hostname=__MYHOSTNAME__&myip=__MYIP__"></div>
+            <div class="field"><label>域名（如 home.example.com）</label><input type="text" id="ddns-domain" placeholder="home.example.com"></div>
+            <div class="field"><label>账号 / 用户名</label><input type="text" id="ddns-user"></div>
+            <div class="field"><label>密码 / 密钥（留空 = 不修改）</label><input type="password" id="ddns-pass" autocomplete="new-password"></div>
+            <div class="field"><label>公网 IP 获取方式</label>
+              <select id="ddns-ipsrc">
+                <option value="web">联网检测（推荐，适合运营商大内网之上的公网 IP）</option>
+                <option value="wan">从 WAN 口获取</option>
+              </select></div>
+            <div class="field"><label>检查间隔（分钟）</label><input type="text" id="ddns-interval" value="10"></div>
+          </div>
+          <div class="msg" id="ddns-msg"></div>
+          <button class="btn" id="ddns-save">保存并应用</button>
+        </div>
+        <div class="card">
+          <h3>UPnP 自动端口<span style="float:right"><label class="switch"><input type="checkbox" id="fw-upnp"><i></i></label></span></h3>
+          <div class="hint">开启后，游戏主机、NAS、P2P 下载等应用可自动申请端口映射，免手动配置。日常建议保持关闭更安全。</div>
+        </div>
+        <div class="card">
+          <h3>DMZ 主机</h3>
+          <div class="fwrow">
+            <div class="field w-sm"><label>启用</label><label class="switch"><input type="checkbox" id="fw-dmz"><i></i></label></div>
+            <div class="field"><label>内网主机 IP（该主机完全暴露给公网，注意安全）</label><input type="text" id="fw-dmzip" placeholder="例：192.168.1.100"></div>
+            <div class="field w-sm"><button class="btn" id="fw-dmz-save">应用</button></div>
+          </div>
+          <div class="msg" id="dmz-msg"></div>
+        </div>
+        <div class="card">
+          <h3>端口转发</h3>
+          <table class="fwdt">
+            <thead><tr><th>备注</th><th>协议</th><th>外部端口</th><th>内部 IP</th><th>内部端口</th><th></th></tr></thead>
+            <tbody id="fw-list"></tbody>
+          </table>
+          <div class="fwrow">
+            <div class="field"><label>备注</label><input type="text" id="fw-name" placeholder="如：NAS"></div>
+            <div class="field w-sm"><label>协议</label><select id="fw-proto"><option value="tcp">TCP</option><option value="udp">UDP</option><option value="tcp udp">TCP+UDP</option></select></div>
+            <div class="field"><label>外部端口</label><input type="text" id="fw-ext" placeholder="8000 或 8000-8100"></div>
+            <div class="field"><label>内部 IP</label><input type="text" id="fw-ip" placeholder="192.168.1.100"></div>
+            <div class="field"><label>内部端口</label><input type="text" id="fw-port" placeholder="留空=同外部"></div>
+            <div class="field w-sm"><button class="btn" id="fw-add">添加</button></div>
+          </div>
+          <div class="msg" id="fw-msg"></div>
+          <div class="hint">把公网（WAN）端口转发到内网设备，用于从外网访问 NAS、监控、远程桌面等服务。</div>
         </div>
       </div>
 
@@ -444,6 +542,7 @@ function load(p){
   else if(p==='mesh') loadMesh();
   else if(p==='relay') loadRelay();
   else if(p==='lan') loadLan();
+  else if(p==='advnet') loadAdvnet();
   else if(p==='system') loadSystem();
   else if(p==='wizard') $('wiz-frame').src='/cgi-bin/wizard?op=page&t='+Date.now();
 }
@@ -456,7 +555,7 @@ function loadOverview(){
     var w=j.wan;
     var nb=$('net-banner');
     if(w.up){ nb.classList.remove('bad'); $('nb-title').textContent='网络已连接';
-      $('nb-desc').textContent='上网方式：'+({dhcp:'自动获得 IP',pppoe:'宽带拨号（PPPoE）',static:'静态 IP'}[w.proto]||w.proto)+(w.ipv4?('　·　IP：'+w.ipv4):'')+(w.gw?('　·　网关：'+w.gw):'');
+      $('nb-desc').textContent='上网方式：'+({dhcp:'自动获得 IP',pppoe:'宽带拨号（PPPoE）',static:'静态 IP',ap:'有线 AP 模式'}[w.proto]||w.proto)+(w.ipv4?('　·　IP：'+w.ipv4):'')+(w.gw?('　·　网关：'+w.gw):'');
     } else { nb.classList.add('bad'); $('nb-title').textContent='网络未连接';
       $('nb-desc').textContent='请检查光猫/网线，或到「上网设置」检查拨号账号'; }
     var s=j.sys;
@@ -497,6 +596,7 @@ function pickWan(v){
   $('wan-dhcp').style.display = v==='dhcp'?'':'none';
   $('wan-pppoe').style.display = v==='pppoe'?'':'none';
   $('wan-static').style.display = v==='static'?'':'none';
+  $('wan-ap').style.display = v==='ap'?'':'none';
 }
 var wanRadios=document.querySelectorAll('#wan-radios input');
 for (var wi=0;wi<wanRadios.length;wi++) wanRadios[wi].onchange=function(){ pickWan(this.value); };
@@ -504,11 +604,13 @@ function loadWan(){
   api('wan_get',{},function(j){
     if(needLogin(j)) return;
     if(!j.ok) return;
-    pickWan(j.proto||'dhcp');
-    var r=document.querySelector('#wan-radios input[value="'+(j.proto||'dhcp')+'"]');
+    var p=j.proto||'dhcp';
+    pickWan(p);
+    var r=document.querySelector('#wan-radios input[value="'+p+'"]');
     if(r) r.checked=true;
     $('wan-user').value=j.pppoeuser||'';
     $('wan-ip').value=j.ip||''; $('wan-mask').value=j.mask||''; $('wan-gw').value=j.gw||''; $('wan-dns').value=j.dns||'';
+    if(p==='ap'){ $('wan-apip').value=''; $('wan-apdhcp').checked=!!j.dhcp_on; }
   });
 }
 $('wan-save').onclick=function(){
@@ -516,6 +618,7 @@ $('wan-save').onclick=function(){
   var d={proto:p};
   if(p==='pppoe'){ d.user=$('wan-user').value; d.pass=$('wan-pass').value; }
   if(p==='static'){ d.ip=$('wan-ip').value; d.mask=$('wan-mask').value; d.gw=$('wan-gw').value; d.dns=$('wan-dns').value; }
+  if(p==='ap'){ d.lanip=$('wan-apip').value; d.dhcp_on=$('wan-apdhcp').checked?'1':'0'; }
   var m=$('wan-msg'); m.className='msg'; m.textContent='';
   api('wan_set',d,function(j){
     if(needLogin(j)) return;
@@ -536,6 +639,9 @@ function loadWifi(){
       $('wf-key'+b).value='';
       $('wf-enc'+b).value=x.encryption||'sae-mixed';
       $('wf-hid'+b).checked=!!x.hidden;
+      $('wf-chan'+b).value=x.channel||'auto';
+      $('wf-bw'+b).value=x.bw||'';
+      $('wf-txp'+b).value=x.txpower||'';
     }
   });
 }
@@ -547,6 +653,9 @@ $('wifi-save').onclick=function(){
     d['key'+b]=$('wf-key'+b).value;
     d['enc'+b]=$('wf-enc'+b).value;
     d['hid'+b]=$('wf-hid'+b).checked?'1':'0';
+    d['chan'+b]=$('wf-chan'+b).value;
+    d['bw'+b]=$('wf-bw'+b).value;
+    d['txp'+b]=$('wf-txp'+b).value;
   }
   var m=$('wifi-msg'); m.className='msg'; m.textContent='';
   api('wifi_set',d,function(j){
@@ -674,6 +783,82 @@ $('lan-save').onclick=function(){
     m.className='msg '+(j.ok?'ok':'err'); m.textContent=j.ok?(j.msg||'设置成功'):(j.error||'设置失败');
   });
 };
+
+/* ---------- DDNS / 防火墙 ---------- */
+var DDNS_SVC={ 'dyn.com':'DynDNS','noip.com':'No-IP','3322.org':'3322.org','oray.com':'花生壳','cloudflare.com-v4':'Cloudflare','custom':'自定义 URL' };
+function loadAdvnet(){
+  api('ddns_get',{},function(j){
+    if(needLogin(j)) return;
+    if(!j.ok) return;
+    $('ddns-en').checked=!!j.enabled;
+    $('ddns-opts').style.display=j.enabled?'':'none';
+    $('ddns-svc').value=j.service||'dyn.com';
+    $('ddns-url').value=j.custom_url||'';
+    $('ddns-domain').value=j.domain||'';
+    $('ddns-user').value=j.user||'';
+    $('ddns-pass').value='';
+    $('ddns-ipsrc').value=j.ipsrc||'web';
+    $('ddns-interval').value=j.interval||'10';
+    $('ddns-url-row').style.display=$('ddns-svc').value==='custom'?'':'none';
+  });
+  api('fw_get',{},function(j){
+    if(needLogin(j)) return;
+    if(!j.ok) return;
+    $('fw-upnp').checked=!!j.upnp;
+    $('fw-dmz').checked=!!(j.dmz&&j.dmz.length);
+    $('fw-dmzip').value=j.dmz||'';
+    var tb=$('fw-list'); tb.innerHTML='';
+    if(!j.forwards.length) tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#98a1b3;padding:14px">暂无端口转发规则</td></tr>';
+    for (var i=0;i<j.forwards.length;i++){
+      var f=j.forwards[i];
+      tb.innerHTML+='<tr><td>'+esc(f.name)+'</td><td>'+esc((f.proto||'').toUpperCase())+'</td><td>'+esc(f.ext)+'</td><td>'+esc(f.ip)+'</td><td>'+esc(f.port||f.ext)+'</td>'
+        +'<td><button class="btn red sm" onclick="fwDel(this)" data-n="'+esc(f.name)+'">删除</button></td></tr>';
+    }
+  });
+}
+$('ddns-en').onchange=function(){ $('ddns-opts').style.display=this.checked?'':'none'; };
+$('ddns-svc').onchange=function(){ $('ddns-url-row').style.display=this.value==='custom'?'':'none'; };
+$('ddns-save').onclick=function(){
+  var m=$('ddns-msg'); m.className='msg'; m.textContent='';
+  api('ddns_set',{enabled:$('ddns-en').checked?'1':'0',service:$('ddns-svc').value,domain:$('ddns-domain').value,user:$('ddns-user').value,pass:$('ddns-pass').value,custom_url:$('ddns-url').value,ipsrc:$('ddns-ipsrc').value,interval:$('ddns-interval').value},function(j){
+    if(needLogin(j)) return;
+    m.className='msg '+(j.ok?'ok':'err'); m.textContent=j.ok?(j.msg||'设置成功'):(j.error||'设置失败');
+    if(j.ok){ $('ddns-pass').value=''; }
+  });
+};
+$('fw-upnp').onchange=function(){
+  var en=this.checked;
+  api('fw_upnp_set',{enabled:en?'1':'0'},function(j){
+    if(needLogin(j)) return;
+    toast(j.ok?(j.msg||(en?'UPnP 已开启':'UPnP 已关闭')):(j.error||'设置失败'));
+    if(!j.ok) $('fw-upnp').checked=!en;
+  });
+};
+$('fw-dmz-save').onclick=function(){
+  var m=$('dmz-msg'); m.className='msg'; m.textContent='';
+  api('fw_dmz_set',{enabled:$('fw-dmz').checked?'1':'0',ip:$('fw-dmzip').value},function(j){
+    if(needLogin(j)) return;
+    m.className='msg '+(j.ok?'ok':'err'); m.textContent=j.ok?(j.msg||'设置成功'):(j.error||'设置失败');
+  });
+};
+$('fw-add').onclick=function(){
+  var m=$('fw-msg'); m.className='msg'; m.textContent='';
+  api('fw_forward_add',{name:$('fw-name').value,proto:$('fw-proto').value,ext:$('fw-ext').value,ip:$('fw-ip').value,port:$('fw-port').value},function(j){
+    if(needLogin(j)) return;
+    m.className='msg '+(j.ok?'ok':'err'); m.textContent=j.ok?(j.msg||'已添加'):(j.error||'添加失败');
+    if(j.ok){
+      $('fw-name').value=''; $('fw-ext').value=''; $('fw-ip').value=''; $('fw-port').value='';
+      setTimeout(loadAdvnet,1200);
+    }
+  });
+};
+function fwDel(btn){
+  if(!confirm('确定删除规则「'+btn.dataset.n+'」？')) return;
+  api('fw_forward_del',{name:btn.dataset.n},function(j){
+    if(needLogin(j)) return;
+    if(!j.ok) toast(j.error||'删除失败'); else setTimeout(loadAdvnet,1000);
+  });
+}
 
 /* ---------- 系统 ---------- */
 function loadSystem(){
