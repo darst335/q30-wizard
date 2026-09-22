@@ -3,6 +3,7 @@
 // 鉴权: rpcd session (cookie q30sysauth)
 // ops: login logout status wan_get wan_set wifi_get wifi_set mesh_get mesh_set mesh_topo
 //      relay_get relay_scan relay_set luci_sso lan_get lan_set adminpass reboot factory
+//      ddns_get ddns_set fw_get fw_forward_add fw_forward_del fw_dmz_set fw_upnp_set
 
 'use strict';
 
@@ -256,10 +257,56 @@ function handle_status() {
 }
 
 // ---------- WAN ----------
+// wan 口是否已桥接入 LAN（有线 AP 模式的判据）
+function wan_bridged(c) {
+	let bridged = false;
+	c.foreach('network', 'device', function (s) {
+		if (s.name != 'br-lan' || type(s.ports) != 'array')
+			return;
+		for (let p in s.ports)
+			if (p == 'wan')
+				bridged = true;
+	});
+	return bridged;
+}
+
+// 把 wan 口加入 / 移出 br-lan 桥
+function bridge_wan(c, add) {
+	c.foreach('network', 'device', function (s) {
+		if (s.name != 'br-lan')
+			return;
+		const ports = (type(s.ports) == 'array') ? s.ports : [];
+		const has = (index(ports, 'wan') >= 0);
+		if (add && !has)
+			push(ports, 'wan');
+		if (!add && has) {
+			const np = [];
+			for (let p in ports)
+				if (p != 'wan')
+					push(np, p);
+			// 用新数组覆盖（先 delete 再 set，避免 list 残留）
+			c.delete('network', s['.name'], 'ports');
+			if (length(np))
+				c.set('network', s['.name'], 'ports', np);
+		} else if (add)
+			c.set('network', s['.name'], 'ports', ports);
+	});
+}
+
 function handle_wan_get() {
 	const c = cursor();
+	const bridged = wan_bridged(c);
+	const out = { ok: true, ap: bridged };
+	if (bridged) {
+		out.proto = 'ap';
+		out.lanip = c.get('network', 'lan', 'ipaddr') ?? '192.168.1.1';
+		out.dhcp_on = (c.get('dhcp', 'lan', 'ignore') != '1');
+		out_json(out);
+		return;
+	}
 	const v = c.get('network', 'wan', 'proto') ?? 'dhcp';
-	const out = { ok: true, proto: v, pppoeuser: c.get('network', 'wan', 'username') ?? '' };
+	out.proto = v;
+	out.pppoeuser = c.get('network', 'wan', 'username') ?? '';
 	if (v == 'static') {
 		out.ip = c.get('network', 'wan', 'ipaddr') ?? '';
 		out.mask = c.get('network', 'wan', 'netmask') ?? '255.255.255.0';
@@ -307,13 +354,39 @@ function apply_wan(c, v) {
 }
 
 function handle_wan_set(v) {
+	const c = cursor();
+	// --- 有线 AP 模式：wan 口桥入 LAN，关闭 NAT 路由 ---
+	if (v.proto == 'ap') {
+		if (length(v.lanip ?? '') && !is_ip(v.lanip))
+			return fail('管理 IP 格式错误');
+		bridge_wan(c, true);
+		c.set('network', 'wan', 'proto', 'none');
+		if (length(v.lanip ?? ''))
+			c.set('network', 'lan', 'ipaddr', v.lanip);
+		if (v.dhcp_on == '1')
+			c.delete('dhcp', 'lan', 'ignore');
+		else
+			c.set('dhcp', 'lan', 'ignore', '1');
+		c.save('network');
+		c.commit('network');
+		c.save('dhcp');
+		c.commit('dhcp');
+		system('(sleep 1; /etc/init.d/network restart; /etc/init.d/dnsmasq restart) >/dev/null 2>&1 &');
+		const tip = length(v.lanip ?? '') ? v.lanip : (c.get('network', 'lan', 'ipaddr') ?? '192.168.1.1');
+		out_json({ ok: true, msg: '已切换为有线 AP 模式。之后请用 ' + tip + ' 访问管理页面（电脑网线接 LAN 口即可上网）。' });
+		return;
+	}
 	if (v.proto != 'dhcp' && v.proto != 'pppoe' && v.proto != 'static')
 		return fail('未知的上网方式');
 	if (v.proto == 'pppoe' && (!length(v.user ?? '') || !length(v.pass ?? '')))
 		return fail('宽带账号或密码为空');
 	if (v.proto == 'static' && (!is_ip(v.ip) || !is_ip(v.mask) || !is_ip(v.gw)))
 		return fail('静态 IP 参数格式错误');
-	const c = cursor();
+	// 从 AP 模式切回路由模式：先把 wan 口移出桥
+	if (wan_bridged(c)) {
+		bridge_wan(c, false);
+		c.delete('dhcp', 'lan', 'ignore');
+	}
 	apply_wan(c, v);
 	c.save('network');
 	c.commit('network');
@@ -337,9 +410,13 @@ function handle_wifi_get() {
 	const out = { ok: true, bands: {} };
 	for (let b in ['0', '1']) {
 		const rad = (b == '0') ? 'radio0' : 'radio1';
+		const ht = c.get('wireless', rad, 'htmode') ?? '';
 		out.bands[b] = {
 			disabled: (c.get('wireless', rad, 'disabled') == '1'),
-			channel: c.get('wireless', rad, 'channel') ?? 'auto'
+			channel: c.get('wireless', rad, 'channel') ?? 'auto',
+			// 频宽由 htmode 反推：HE20/HT20→20, HE40/HT40→40, HE80/VHT80/HT80→80
+			bw: (index(ht, '80') >= 0) ? '80' : (index(ht, '40') >= 0) ? '40' : (index(ht, '20') >= 0) ? '20' : '',
+			txpower: c.get('wireless', rad, 'txpower') ?? ''
 		};
 	}
 	c.foreach('wireless', 'wifi-iface', function (s) {
@@ -353,6 +430,18 @@ function handle_wifi_get() {
 	out_json(out);
 }
 
+// 校验信道：2.4G = auto/1-13；5G = auto/36-64/100-144/149-165
+function valid_channel(band, ch) {
+	if (ch == 'auto' || ch == '')
+		return true;
+	const n = int(ch);
+	if (n == null)
+		return false;
+	if (band == '0')
+		return (n >= 1 && n <= 13);
+	return (n >= 36 && n <= 165);
+}
+
 function handle_wifi_set(v) {
 	const plan = {};
 	for (let b in ['0', '1']) {
@@ -363,12 +452,34 @@ function handle_wifi_set(v) {
 			return fail('Wi-Fi 名称不合法（1-32 字符）');
 		if (p.enc != 'none' && (length(p.key ?? '') < 8 || length(p.key) > 63))
 			return fail('Wi-Fi 密码需要 8-63 位');
+		// --- 高级参数 ---
+		p.chan = v['chan' + b] ?? '';
+		if (!valid_channel(b, p.chan))
+			return fail('信道参数不合法');
+		p.bw = v['bw' + b] ?? '';
+		if (p.bw != '' && index(['20', '40', '80'], p.bw) == -1)
+			return fail('频宽参数不合法');
+		p.txp = v['txp' + b] ?? '';
+		if (p.txp != '') {
+			const t = int(p.txp);
+			if (t == null || t < 1 || t > 30)
+				return fail('发射功率不合法（1-30 dBm）');
+		}
 		plan[(b == '0') ? 'radio0' : 'radio1'] = p;
 	}
 	const c = cursor();
 	for (let rad in ['radio0', 'radio1']) {
 		const p = plan[rad];
 		c.set('wireless', rad, 'disabled', (p.en == '1') ? '0' : '1');
+		// 高级参数：信道 / 频宽(htmode) / 发射功率
+		if (length(p.chan))
+			c.set('wireless', rad, 'channel', p.chan);
+		if (length(p.bw))
+			c.set('wireless', rad, 'htmode', 'HE' + p.bw);
+		if (p.txp != '')
+			c.set('wireless', rad, 'txpower', p.txp);
+		else
+			c.delete('wireless', rad, 'txpower');
 	}
 	c.foreach('wireless', 'wifi-iface', function (s) {
 		const p = plan[s.device];
@@ -674,6 +785,231 @@ function handle_adminpass(v) {
 	out_json({ ok: true, msg: '管理密码已修改，下次登录使用新密码。' });
 }
 
+// ---------- DDNS ----------
+function ddns_section(c) {
+	let name = null;
+	c.foreach('ddns', 'service', function (s) {
+		if (name == null)
+			name = s['.name'];
+	});
+	return name;
+}
+
+function handle_ddns_get() {
+	const c = cursor();
+	const out = { ok: true, enabled: false, service: '', domain: '', user: '', pass_set: false, custom_url: '', interval: '10', ipsrc: 'web' };
+	const name = ddns_section(c);
+	if (name != null) {
+		out.enabled = (c.get('ddns', name, 'enabled') == '1');
+		out.service = c.get('ddns', name, 'service_name') ?? 'custom';
+		out.domain = c.get('ddns', name, 'lookup_host') ?? '';
+		out.user = c.get('ddns', name, 'username') ?? '';
+		out.pass_set = length(c.get('ddns', name, 'password') ?? '') > 0;
+		out.custom_url = c.get('ddns', name, 'update_url') ?? '';
+		out.interval = c.get('ddns', name, 'check_interval') ?? '10';
+		out.ipsrc = (c.get('ddns', name, 'ip_source') == 'network') ? 'wan' : 'web';
+	}
+	out_json(out);
+}
+
+function handle_ddns_set(v) {
+	const en = (v.enabled == '1');
+	const svc = (v.service ?? '') + '';
+	const domain = (v.domain ?? '') + '';
+	const interval = int(v.interval ?? '10');
+	if (en) {
+		if (!length(domain))
+			return fail('请填写 DDNS 域名');
+		if (svc == 'custom' && index((v.custom_url ?? '') + '', 'http') != 0)
+			return fail('自定义更新地址需要以 http:// 或 https:// 开头');
+		if (svc != 'custom' && !length(svc))
+			return fail('请选择服务商');
+		if (interval == null || interval < 1 || interval > 1440)
+			return fail('检查间隔需在 1-1440 分钟');
+		if (!length(v.user ?? ''))
+			return fail('请填写账号/用户名');
+		if (!length(v.pass ?? '') && !v.keep_pass)
+			return fail('请填写密码/密钥');
+	}
+	const c = cursor();
+	let name = ddns_section(c);
+	if (name == null) {
+		name = 'myddns';
+		c.set('ddns', name, 'service');
+	}
+	c.set('ddns', name, 'enabled', en ? '1' : '0');
+	if (en || length(domain)) {
+		c.set('ddns', name, 'lookup_host', domain);
+		c.set('ddns', name, 'service_name', (svc == 'custom') ? '' : svc);
+		if (svc == 'custom')
+			c.set('ddns', name, 'update_url', v.custom_url);
+		c.set('ddns', name, 'username', v.user);
+		if (length(v.pass ?? ''))
+			c.set('ddns', name, 'password', v.pass);
+		c.set('ddns', name, 'check_interval', interval ?? '10');
+		c.set('ddns', name, 'check_unit', 'minutes');
+		c.set('ddns', name, 'retry_interval', '60');
+		c.set('ddns', name, 'retry_unit', 'seconds');
+		if ((v.ipsrc ?? 'web') == 'wan') {
+			c.set('ddns', name, 'ip_source', 'network');
+			c.set('ddns', name, 'ip_network', 'wan');
+		} else {
+			c.set('ddns', name, 'ip_source', 'web');
+			c.set('ddns', name, 'ip_url', 'https://api.ipify.org');
+		}
+		c.set('ddns', name, 'use_https', '1');
+		c.set('ddns', name, 'force_interval', '72');
+		c.set('ddns', name, 'force_unit', 'hours');
+	}
+	c.save('ddns');
+	c.commit('ddns');
+	if (en)
+		system('(/etc/init.d/ddns enable; sleep 1; /etc/init.d/ddns restart) >/dev/null 2>&1 &');
+	else
+		system('(/etc/init.d/ddns stop) >/dev/null 2>&1 &');
+	out_json({ ok: true, msg: en ? 'DDNS 已开启，正在后台连接服务商，约 1 分钟后生效。' : 'DDNS 已关闭。' });
+}
+
+// ---------- 防火墙 ----------
+function reload_fw() {
+	system('(sleep 1; /etc/init.d/firewall reload) >/dev/null 2>&1 &');
+}
+
+function valid_port(s) {
+	return match(s ?? '', /^\d{1,5}(-\d{1,5})?$/) != null;
+}
+
+function handle_fw_get() {
+	const c = cursor();
+	const fwd = [];
+	let dmz = '';
+	c.foreach('firewall', 'redirect', function (s) {
+		if (s.target != 'DNAT')
+			return;
+		if ((s.name ?? '') == 'DMZ') {
+			dmz = s.dest_ip ?? '';
+			return;
+		}
+		push(fwd, {
+			name: s.name ?? s['.name'],
+			proto: s.proto ?? 'tcp udp',
+			ext: s.src_dport ?? '',
+			ip: s.dest_ip ?? '',
+			port: s.dest_port ?? ''
+		});
+	});
+	out_json({
+		ok: true,
+		forwards: fwd,
+		dmz: dmz,
+		upnp: (c.get('upnpd', 'config', 'enabled') == '1')
+	});
+}
+
+function handle_fw_forward_add(v) {
+	const proto = (v.proto == 'tcp' || v.proto == 'udp') ? v.proto : 'tcp udp';
+	if (!valid_port(v.ext))
+		return fail('外部端口格式错误（数字或范围，如 8000 或 8000-8100）');
+	if (!is_ip(v.ip))
+		return fail('内部 IP 地址格式错误');
+	if (length(v.port ?? '') && !valid_port(v.port))
+		return fail('内部端口格式错误');
+	let name = (v.name ?? '') + '';
+	if (!length(name))
+		name = '端口转发-' + v.ext;
+	if (length(name) > 32)
+		return fail('备注过长');
+	const c = cursor();
+	// 重名检查
+	let dup = false;
+	c.foreach('firewall', 'redirect', function (s) {
+		if ((s.name ?? '') == name)
+			dup = true;
+	});
+	if (dup)
+		return fail('已存在同名规则');
+	const sec = 'fwd_' + replace('' + time(), /\./g, '');
+	c.set('firewall', sec, 'redirect');
+	c.set('firewall', sec, 'name', name);
+	c.set('firewall', sec, 'target', 'DNAT');
+	c.set('firewall', sec, 'src', 'wan');
+	c.set('firewall', sec, 'dest', 'lan');
+	c.set('firewall', sec, 'proto', proto);
+	c.set('firewall', sec, 'src_dport', v.ext);
+	c.set('firewall', sec, 'dest_ip', v.ip);
+	c.set('firewall', sec, 'dest_port', length(v.port ?? '') ? v.port : v.ext);
+	c.save('firewall');
+	c.commit('firewall');
+	reload_fw();
+	out_json({ ok: true, msg: '端口转发规则已添加并生效。' });
+}
+
+function handle_fw_forward_del(v) {
+	const c = cursor();
+	let found = null;
+	c.foreach('firewall', 'redirect', function (s) {
+		if ((s.name ?? '') == v.name || s['.name'] == v.name)
+			found = s['.name'];
+	});
+	if (found == null)
+		return fail('规则不存在');
+	c.delete('firewall', found);
+	c.save('firewall');
+	c.commit('firewall');
+	reload_fw();
+	out_json({ ok: true, msg: '规则已删除。' });
+}
+
+function handle_fw_dmz_set(v) {
+	const en = (v.enabled == '1');
+	const c = cursor();
+	let sec = null;
+	c.foreach('firewall', 'redirect', function (s) {
+		if ((s.name ?? '') == 'DMZ' && s.target == 'DNAT')
+			sec = s['.name'];
+	});
+	if (en) {
+		if (!is_ip(v.ip))
+			return fail('DMZ 主机 IP 格式错误');
+		if (sec == null) {
+			sec = 'dmz';
+			c.set('firewall', sec, 'redirect');
+			c.set('firewall', sec, 'name', 'DMZ');
+			c.set('firewall', sec, 'target', 'DNAT');
+			c.set('firewall', sec, 'src', 'wan');
+			c.set('firewall', sec, 'dest', 'lan');
+			c.set('firewall', sec, 'proto', 'all');
+		}
+		c.set('firewall', sec, 'dest_ip', v.ip);
+	} else if (sec != null) {
+		c.delete('firewall', sec);
+	}
+	c.save('firewall');
+	c.commit('firewall');
+	reload_fw();
+	out_json({ ok: true, msg: en ? 'DMZ 主机已设置（该主机暴露在公网，请自行做好安全防护）。' : 'DMZ 已关闭。' });
+}
+
+function handle_fw_upnp_set(v) {
+	const en = (v.enabled == '1');
+	const c = cursor();
+	// miniupnpd 未安装时 uci 找不到配置，先创建
+	if (c.get('upnpd', 'config') == null && c.get('upnpd', 'config', 'enabled') == null) {
+		c.set('upnpd', 'config', 'config');
+		c.set('upnpd', 'config', 'ext_ifname', 'wan');
+		c.set('upnpd', 'config', 'enable_natpmp', '1');
+		c.set('upnpd', 'config', 'enable_upnp', '1');
+	}
+	c.set('upnpd', 'config', 'enabled', en ? '1' : '0');
+	c.save('upnpd');
+	c.commit('upnpd');
+	if (en)
+		system('(/etc/init.d/miniupnpd enable; sleep 1; /etc/init.d/miniupnpd restart) >/dev/null 2>&1 &');
+	else
+		system('(/etc/init.d/miniupnpd stop) >/dev/null 2>&1 &');
+	out_json({ ok: true, msg: en ? 'UPnP 已开启（游戏主机/P2P 等应用可自动打通端口）。' : 'UPnP 已关闭。' });
+}
+
 // ---------- main ----------
 try {
 	const qs = parse_qs(getenv('QUERY_STRING') ?? '');
@@ -775,6 +1111,27 @@ try {
 		} else if (op == 'adminpass' && post) {
 			if (!auth_ok()) { deny(); }
 			else handle_adminpass(read_body());
+		} else if (op == 'ddns_get') {
+			if (!auth_ok()) { deny(); }
+			else handle_ddns_get();
+		} else if (op == 'ddns_set' && post) {
+			if (!auth_ok()) { deny(); }
+			else handle_ddns_set(read_body());
+		} else if (op == 'fw_get') {
+			if (!auth_ok()) { deny(); }
+			else handle_fw_get();
+		} else if (op == 'fw_forward_add' && post) {
+			if (!auth_ok()) { deny(); }
+			else handle_fw_forward_add(read_body());
+		} else if (op == 'fw_forward_del' && post) {
+			if (!auth_ok()) { deny(); }
+			else handle_fw_forward_del(read_body());
+		} else if (op == 'fw_dmz_set' && post) {
+			if (!auth_ok()) { deny(); }
+			else handle_fw_dmz_set(read_body());
+		} else if (op == 'fw_upnp_set' && post) {
+			if (!auth_ok()) { deny(); }
+			else handle_fw_upnp_set(read_body());
 		} else if (op == 'reboot' && post) {
 			if (!auth_ok()) { deny(); }
 			else {
