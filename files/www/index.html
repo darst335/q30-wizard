@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JCG Q30 Pro</title>
+<style>
+body { background: #f4f6f9; font-family: arial, helvetica, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+.box { text-align: center; color: #444; }
+.spinner { width: 34px; height: 34px; border: 3px solid #d6dde6; border-top-color: #2f7dd1; border-radius: 50%; margin: 0 auto 14px; animation: s 0.8s linear infinite; }
+@keyframes s { to { transform: rotate(360deg); } }
+a { color: #2f7dd1; }
+@media (prefers-color-scheme: dark) {
+  body { background: #16181d; }
+  .box { color: #cfd6df; }
+  .spinner { border-color: #333a45; border-top-color: #5b9bd8; }
+  a { color: #5b9bd8; }
+}
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="spinner"></div>
+  <div id="msg">正在检查路由器状态…</div>
+  <noscript><a href="cgi-bin/luci/">进入路由器管理界面</a></noscript>
+</div>
+<script>
+(function () {
+  var t = setTimeout(function () { location.replace('cgi-bin/luci/'); }, 4000);
+  fetch('cgi-bin/wizard?op=state&mode=firstboot', { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (s) {
+      clearTimeout(t);
+      if (s && s.wizard) { location.replace('wizard.html'); }
+      else { location.replace('cgi-bin/luci/'); }
+    })
+    .catch(function () { clearTimeout(t); location.replace('cgi-bin/luci/'); });
+})();
+</script>
+</body>
+</html>
