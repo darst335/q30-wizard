@@ -1,8 +1,8 @@
 #!/usr/bin/ucode
 // Q30 Pro 家用管理界面后端 (ucode CGI)
 // 鉴权: rpcd session (cookie q30sysauth)
-// ops: login logout status wan_get wan_set wifi_get wifi_set mesh_get mesh_set lan_get lan_set
-//      adminpass reboot factory
+// ops: login logout status wan_get wan_set wifi_get wifi_set mesh_get mesh_set mesh_topo
+//      relay_get relay_scan relay_set luci_sso lan_get lan_set adminpass reboot factory
 
 'use strict';
 
@@ -186,6 +186,8 @@ function wifi_status() {
 		push(radios, r);
 	}
 	c.foreach('wireless', 'wifi-iface', function (s) {
+		if (s.mode != null && s.mode != 'ap')
+			return;
 		for (let r in radios) {
 			if (s.device == r.radio) {
 				r.ssid = s.ssid ?? '';
@@ -390,9 +392,15 @@ function handle_wifi_set(v) {
 }
 
 // ---------- Mesh (802.11s) ----------
-function handle_mesh_get() {
+function mesh_role() {
+	const p = popen("uci -q get wizard.mesh.role 2>/dev/null");
+	const v = (p != null) ? replace(p.read('all') ?? '', /\s+$/, '') : '';
+	return (v == 'sub') ? 'sub' : 'main';
+}
+
+function mesh_state() {
 	const c = cursor();
-	const out = { ok: true, enabled: false, mesh_id: '', has: false };
+	const out = { enabled: false, mesh_id: '', has: false };
 	c.foreach('wireless', 'wifi-iface', function (s) {
 		if (s.mode != 'mesh')
 			return;
@@ -401,13 +409,21 @@ function handle_mesh_get() {
 		if (s.disabled != '1')
 			out.enabled = true;
 	});
-	out_json(out);
+	return out;
+}
+
+function handle_mesh_get() {
+	const st = mesh_state();
+	st.ok = true;
+	st.role = mesh_role();
+	out_json(st);
 }
 
 function handle_mesh_set(v) {
 	const en = (v.enabled == '1');
 	const mid = (v.mesh_id ?? '') + '';
 	const key = (v.key ?? '') + '';
+	const role = (v.role == 'sub') ? 'sub' : 'main';
 	if (en) {
 		if (!length(mid) || length(mid) > 32)
 			return fail('Mesh 名称需要 1-32 字符');
@@ -439,8 +455,173 @@ function handle_mesh_set(v) {
 	}
 	c.save('wireless');
 	c.commit('wireless');
+	system("uci -q set wizard.mesh=mesh; uci -q set wizard.mesh.role='" + role + "'; uci -q commit wizard");
 	system('(sleep 1; /sbin/wifi reload) >/dev/null 2>&1 &');
 	out_json({ ok: true, msg: en ? 'Mesh 已开启，正在应用，无线会短暂重启…' : 'Mesh 已关闭，正在应用…' });
+}
+
+function ubus_arr(r) {
+	return (type(r) == 'array') ? r[0] : r;
+}
+
+function handle_mesh_topo() {
+	const st = mesh_state();
+	if (!st.enabled) {
+		out_json({ ok: true, enabled: false });
+		return;
+	}
+	const role = mesh_role();
+	const c = cursor();
+	const ub = conn();
+	const leases = {};
+	for (let line in split(readfile('/tmp/dhcp.leases') ?? '', '\n')) {
+		const f = split(line, ' ');
+		if (length(f) >= 3)
+			leases[lc(f[1])] = f[2];
+	}
+	const wst = ubus_arr(ub.call('network.wireless', 'status', {}));
+	const self_macs = [];
+	const nodes = [];
+	for (let rad in ['radio0', 'radio1']) {
+		const r = (wst != null) ? wst[rad] : null;
+		if (r == null || type(r.interfaces) != 'array')
+			continue;
+		for (let itf in r.interfaces) {
+			const cfg = itf.config ?? {};
+			if (cfg.mode != 'mesh' || !itf.ifname)
+				continue;
+			const ifn = itf.ifname;
+			const mymac = lc(sysval('/sys/class/net/' + ifn + '/address'));
+			if (mymac != '')
+				push(self_macs, { band: (rad == 'radio0') ? '2.4G' : '5G', mac: mymac });
+			if (r.up != true)
+				continue;
+			const al = ubus_arr(ub.call('iwinfo', 'assoclist', { device: ifn }));
+			if (al != null && type(al.results) == 'array') {
+				for (let p in al.results) {
+					const mac = lc(p.mac ?? '');
+					if (mac == '' || mac == mymac)
+						continue;
+					push(nodes, {
+						band: (rad == 'radio0') ? '2.4G' : '5G',
+						mac: mac,
+						signal: p.signal ?? 0,
+						ip: leases[mac] ?? ''
+					});
+				}
+			}
+		}
+	}
+	out_json({
+		ok: true,
+		enabled: true,
+		role: role,
+		mesh_id: st.mesh_id,
+		self_ip: c.get('network', 'lan', 'ipaddr') ?? '192.168.1.1',
+		self_macs: self_macs,
+		nodes: nodes
+	});
+}
+
+// ---------- 无线桥接 (STA 中继) ----------
+function handle_relay_get() {
+	const c = cursor();
+	const out = { ok: true, enabled: false, band: '0', ssid: '' };
+	c.foreach('wireless', 'wifi-iface', function (s) {
+		if (s.mode != 'sta')
+			return;
+		out.band = (s.device == 'radio1') ? '1' : '0';
+		out.ssid = s.ssid ?? '';
+		if (s.disabled != '1')
+			out.enabled = true;
+	});
+	out.dhcp_off = (c.get('dhcp', 'lan', 'ignore') == '1');
+	out_json(out);
+}
+
+function handle_relay_scan(v) {
+	const band = (v.band == '1') ? 'radio1' : 'radio0';
+	const ub = conn();
+	const wst = ubus_arr(ub.call('network.wireless', 'status', {}));
+	const r = (wst != null) ? wst[band] : null;
+	if (r == null || type(r.interfaces) != 'array')
+		return fail('无线接口未就绪，请稍后再试');
+	let ifn = null;
+	for (let itf in r.interfaces) {
+		if (itf.ifname) {
+			ifn = itf.ifname;
+			break;
+		}
+	}
+	if (ifn == null)
+		return fail('无线接口未就绪，请稍后再试');
+	const sc = ubus_arr(ub.call('iwinfo', 'scan', { device: ifn }));
+	const list = [];
+	if (sc != null && type(sc.results) == 'array') {
+		for (let ap in sc.results) {
+			let enc = '开放';
+			if (type(ap.encryption) == 'object' && type(ap.encryption.wpa) == 'array' && length(ap.encryption.wpa) > 0)
+				enc = (index(ap.encryption.wpa, 3) >= 0) ? 'WPA3' : (index(ap.encryption.wpa, 2) >= 0) ? 'WPA2' : 'WPA';
+			push(list, { ssid: ap.ssid ?? '', signal: ap.signal ?? -100, chan: ap.channel ?? 0, enc: enc });
+		}
+	}
+	sort(list, (a, b) => b.signal - a.signal);
+	const seen = {};
+	const dedup = [];
+	for (let ap in list) {
+		if (ap.ssid == '')
+			continue;
+		const k = ap.ssid + '|' + ap.chan;
+		if (seen[k])
+			continue;
+		seen[k] = true;
+		push(dedup, ap);
+		if (length(dedup) >= 12)
+			break;
+	}
+	out_json({ ok: true, list: dedup });
+}
+
+function handle_relay_set(v) {
+	const en = (v.enabled == '1');
+	const band = (v.band == '1') ? 'radio1' : 'radio0';
+	const ssid = (v.ssid ?? '') + '';
+	const key = (v.key ?? '') + '';
+	if (en) {
+		if (!length(ssid) || length(ssid) > 32)
+			return fail('上级 Wi-Fi 名称不合法（1-32 字符）');
+		if (length(key) < 8 || length(key) > 63)
+			return fail('上级 Wi-Fi 密码需要 8-63 位');
+	}
+	const c = cursor();
+	let name = null;
+	c.foreach('wireless', 'wifi-iface', function (s) {
+		if (s.mode == 'sta' && name == null)
+			name = s['.name'];
+	});
+	if (name == null) {
+		name = (band == 'radio1') ? 'sta1' : 'sta0';
+		c.set('wireless', name, 'wifi-iface');
+		c.set('wireless', name, 'mode', 'sta');
+		c.set('wireless', name, 'network', 'lan');
+	}
+	c.set('wireless', name, 'device', band);
+	if (en) {
+		c.set('wireless', name, 'ssid', ssid);
+		c.set('wireless', name, 'encryption', 'psk2');
+		c.set('wireless', name, 'key', key);
+	}
+	c.set('wireless', name, 'disabled', en ? '0' : '1');
+	c.save('wireless');
+	c.commit('wireless');
+	if (en && v.close_dhcp != '0') {
+		c.set('dhcp', 'lan', 'ignore', '1');
+		c.save('dhcp');
+		c.commit('dhcp');
+		system('(sleep 2; /etc/init.d/dnsmasq restart) >/dev/null 2>&1 &');
+	}
+	system('(sleep 1; /sbin/wifi reload) >/dev/null 2>&1 &');
+	out_json({ ok: true, msg: en ? '桥接已开启，正在连接上级 Wi-Fi，约 30 秒后生效…' : '桥接已关闭，正在应用…' });
 }
 
 // ---------- LAN ----------
@@ -523,6 +704,33 @@ try {
 		printf('Set-Cookie: %s=; Path=/; Max-Age=0\r\n', COOKIE);
 		printf('\r\n');
 		out_json({ ok: true });
+	} else if (op == 'luci_sso') {
+		const tk = get_token();
+		let ok = false;
+		if (tk != null) {
+			const ub = conn();
+			const r = ub.call('session', 'get', { ubus_rpc_session: tk });
+			ok = (ubus_arr(r) != null);
+			if (ok) {
+				// LuCI dispatcher 校验 session.values.token 与 username（见 /usr/share/ucode/luci/dispatcher.uc）
+				let token = '';
+				const tp = popen('(date +%s; head -c 16 /dev/urandom) | md5sum | cut -c1-16');
+				if (tp != null)
+					token = replace(tp.read('all') ?? '', /\s+$/, '');
+				ub.call('session', 'set', { ubus_rpc_session: tk, values: { token: token, username: 'root' } });
+			}
+		}
+		printf('Content-Type: text/html; charset=utf-8\r\n');
+		printf('Cache-Control: no-store\r\n');
+		if (ok) {
+			printf('Set-Cookie: sysauth_http=%s; Path=/cgi-bin/luci; SameSite=strict; HttpOnly\r\n', tk);
+			printf('Set-Cookie: sysauth_root=%s; Path=/cgi-bin/luci; HttpOnly\r\n', tk);
+			printf('\r\n');
+			printf('<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/cgi-bin/luci/"></head><body style="font-family:sans-serif">正在进入专家模式… <a href="/cgi-bin/luci/">点此继续</a></body></html>');
+		} else {
+			printf('\r\n');
+			printf('<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/"></head><body style="font-family:sans-serif">登录已过期，请返回管理页面重新登录。</body></html>');
+		}
 	} else {
 		out_headers();
 		if (op == 'status') {
@@ -546,6 +754,18 @@ try {
 		} else if (op == 'mesh_set' && post) {
 			if (!auth_ok()) { deny(); }
 			else handle_mesh_set(read_body());
+		} else if (op == 'mesh_topo') {
+			if (!auth_ok()) { deny(); }
+			else handle_mesh_topo();
+		} else if (op == 'relay_get') {
+			if (!auth_ok()) { deny(); }
+			else handle_relay_get();
+		} else if (op == 'relay_scan' && post) {
+			if (!auth_ok()) { deny(); }
+			else handle_relay_scan(read_body());
+		} else if (op == 'relay_set' && post) {
+			if (!auth_ok()) { deny(); }
+			else handle_relay_set(read_body());
 		} else if (op == 'lan_get') {
 			if (!auth_ok()) { deny(); }
 			else handle_lan_get();
