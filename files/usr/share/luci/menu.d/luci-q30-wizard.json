@@ -1,0 +1,13 @@
+{
+	"admin/system/q30-wizard": {
+		"title": "快速设置向导",
+		"order": 3,
+		"action": {
+			"type": "view",
+			"path": "system/q30-wizard"
+		},
+		"depends": {
+			"acl": [ "luci-q30-wizard" ]
+		}
+	}
+}
