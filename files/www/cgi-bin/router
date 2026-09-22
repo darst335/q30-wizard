@@ -426,6 +426,8 @@ function handle_wifi_get() {
 		out.bands[b].ssid = s.ssid ?? '';
 		out.bands[b].encryption = s.encryption ?? 'none';
 		out.bands[b].hidden = (s.hidden == '1');
+		// 回传当前 Wi-Fi 密码（仅管理页展示用；open 模式无密码返回空）
+		out.bands[b].key = ((s.encryption ?? 'none') == 'none') ? '' : (s.key ?? '');
 	});
 	out_json(out);
 }
