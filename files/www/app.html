@@ -126,6 +126,8 @@ table.clients .st.off { background:#c3cad6; }
 .spin { width:34px; height:34px; border:4px solid #dfe5ef; border-top-color:#2f6fd6; border-radius:50%; margin:0 auto 16px; animation:sp 1s linear infinite; }
 @keyframes sp { to { transform:rotate(360deg); } }
 @media (max-width:860px){ .grid2{grid-template-columns:1fr} #sidebar{width:170px} .ports{grid-template-columns:repeat(2,1fr)} }
+#app-footer{ margin-top:26px; padding:0 2px 6px; font-size:12px; color:#9aa3b5; user-select:none; letter-spacing:.02em }
+#app-footer strong{ color:#8790a3; font-weight:600 }
 
 /* ---------- mesh topo ---------- */
 .mnode { border:1px solid #dfe5ef; border-radius:10px; padding:12px 14px; background:#f8fafd; max-width:420px; }
@@ -370,6 +372,10 @@ table.clients .st.off { background:#c3cad6; }
           <div style="height:14px"></div>
           <iframe id="wiz-frame" src="about:blank" style="width:100%;height:640px;border:1px solid #dfe5ef;border-radius:10px;background:#fff"></iframe>
         </div>
+      </div>
+
+      <div id="app-footer">
+        固件基于 <strong>ImmortalWrt 24.10.6</strong> 编译 · 界面与功能由 <strong>darst335</strong> 与 AI 助手共同定制
       </div>
 
     </div>
