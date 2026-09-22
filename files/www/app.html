@@ -155,6 +155,7 @@ table.clients .st.off { background:#c3cad6; }
       <div class="nav on" data-p="overview"><i class="ico">⌂</i>总览</div>
       <div class="nav" data-p="wan"><i class="ico">🌐</i>上网设置</div>
       <div class="nav" data-p="wifi"><i class="ico">📶</i>Wi-Fi 设置</div>
+      <div class="nav" data-p="mesh"><i class="ico">🕸</i>Mesh 组网</div>
       <div class="nav" data-p="lan"><i class="ico">☷</i>局域网设置</div>
       <div class="sep"></div>
       <div class="nav" data-p="system"><i class="ico">⚙</i>系统管理</div>
@@ -257,6 +258,22 @@ table.clients .st.off { background:#c3cad6; }
         <div class="msg" id="wifi-msg"></div>
         <button class="btn" id="wifi-save">保存并应用</button>
         <div class="hint">保存后 Wi-Fi 会重启，所有设备需要重新连接。修改密码后请用新密码重连。</div>
+      </div>
+
+      <!-- Mesh 组网 -->
+      <div class="page" id="pg-mesh">
+        <h2 class="pg">Mesh 组网</h2>
+        <div class="card">
+          <h3>无线 Mesh 组网（802.11s）<span style="float:right"><label class="switch"><input type="checkbox" id="mesh-en"><i></i></label></span></h3>
+          <div class="hint" style="margin-bottom:14px">多台路由器无线互联、扩展覆盖（默认关闭）。本路由与另一台开启 Mesh 的路由器使用<strong>相同的 Mesh 名称和密码</strong>即可自动组网，子路由无需网线，会同步上网设置。</div>
+          <div id="mesh-opts" style="display:none">
+            <div class="field"><label>Mesh 名称</label><input type="text" id="mesh-id" maxlength="32" placeholder="例：Home-Mesh"></div>
+            <div class="field"><label>Mesh 密码（8-63 位）</label><input type="password" id="mesh-key" maxlength="63"></div>
+          </div>
+          <div class="msg" id="mesh-msg"></div>
+          <button class="btn" id="mesh-save">保存并应用</button>
+          <div class="hint">保存后无线会短暂重启。开启前请先在此设置名称和密码；两台路由器参数必须一致。</div>
+        </div>
       </div>
 
       <!-- 局域网设置 -->
@@ -365,6 +382,7 @@ function load(p){
   if(p==='overview') loadOverview();
   else if(p==='wan') loadWan();
   else if(p==='wifi') loadWifi();
+  else if(p==='mesh') loadMesh();
   else if(p==='lan') loadLan();
   else if(p==='system') loadSystem();
 }
@@ -471,6 +489,26 @@ $('wifi-save').onclick=function(){
   }
   var m=$('wifi-msg'); m.className='msg'; m.textContent='';
   api('wifi_set',d,function(j){
+    if(needLogin(j)) return;
+    m.className='msg '+(j.ok?'ok':'err'); m.textContent=j.ok?(j.msg||'设置成功'):(j.error||'设置失败');
+  });
+};
+
+/* ---------- Mesh ---------- */
+function loadMesh(){
+  api('mesh_get',{},function(j){
+    if(needLogin(j)) return;
+    if(!j.ok) return;
+    $('mesh-en').checked=!!j.enabled;
+    $('mesh-id').value=j.mesh_id||'';
+    $('mesh-key').value='';
+    $('mesh-opts').style.display=j.enabled?'':'none';
+  });
+}
+$('mesh-en').onchange=function(){ $('mesh-opts').style.display=this.checked?'':'none'; };
+$('mesh-save').onclick=function(){
+  var m=$('mesh-msg'); m.className='msg'; m.textContent='';
+  api('mesh_set',{enabled:$('mesh-en').checked?'1':'0',mesh_id:$('mesh-id').value,key:$('mesh-key').value},function(j){
     if(needLogin(j)) return;
     m.className='msg '+(j.ok?'ok':'err'); m.textContent=j.ok?(j.msg||'设置成功'):(j.error||'设置失败');
   });
