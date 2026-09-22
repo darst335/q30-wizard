@@ -1,0 +1,15 @@
+{
+	"luci-q30-wizard": {
+		"description": "Q30 Pro quick setup wizard",
+		"read": {
+			"cgi-io": [ "exec" ],
+			"file": {
+				"/www/cgi-bin/wizard": [ "exec" ]
+			},
+			"ubus": {
+				"session": [ "access", "login" ]
+			}
+		},
+		"write": {}
+	}
+}
