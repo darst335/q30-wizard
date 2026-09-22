@@ -645,7 +645,7 @@ function loadWifi(){
       var x=j.bands[b]||{};
       $('wf-en'+b).checked=!x.disabled;
       $('wf-ssid'+b).value=x.ssid||'';
-      $('wf-key'+b).value='';
+      $('wf-key'+b).value=x.key||'';
       $('wf-enc'+b).value=x.encryption||'sae-mixed';
       $('wf-hid'+b).checked=!!x.hidden;
       $('wf-chan'+b).value=x.channel||'auto';
