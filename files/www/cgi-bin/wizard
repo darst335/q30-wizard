@@ -155,6 +155,7 @@ function apply_wifi(c, v, errors) {
 }
 
 function handle_state() {
+	out_headers();
 	const model = readfile('/tmp/sysinfo/model');
 	const done = wizard_done();
 	const pending = firstboot_pending();
@@ -168,20 +169,27 @@ function handle_state() {
 }
 
 // op=page：把向导页作为 HTML 输出（供 LuCI 视图 iframe 内嵌）
+// iframe 中的文档基路径是 /cgi-bin/，需把相对引用改写为绝对路径
 function handle_page() {
 	printf('Content-Type: text/html; charset=utf-8\r\n');
 	printf('Cache-Control: no-store\r\n');
 	printf('\r\n');
 	const html = readfile('/www/wizard.html');
-	if (html == null)
+	if (html == null) {
 		printf('<h2>wizard.html 缺失</h2>');
-	else {
-		// iframe 内嵌时把内部相对链接指向根路径，避免解析成 /cgi-bin/xxx
-		printf('%s', replace(html, /(href|src|fetch\()'([^']*)'/g, "$1'/$2'"));
+		return;
 	}
+	let h = html;
+	h = replace(h, "fetch('cgi-bin/wizard", "fetch('/cgi-bin/wizard");
+	h = replace(h, "fetch(\"cgi-bin/wizard", "fetch(\"/cgi-bin/wizard");
+	h = replace(h, 'href="cgi-bin/', 'href="/cgi-bin/');
+	h = replace(h, "href='cgi-bin/", "href='/cgi-bin/");
+	printf('%s', h);
 }
 
-function handle_apply() {	if (wizard_done()) {
+function handle_apply() {
+	out_headers();
+	if (wizard_done()) {
 		out_json({ ok: false, error: '向导已完成，请通过管理界面修改配置' });
 		return;
 	}
@@ -253,10 +261,9 @@ try {
 		handle_state();
 	else if (op == 'page')
 		handle_page();
-	else if (op == 'apply' && getenv('REQUEST_METHOD') == 'POST') {
-		out_headers();
+	else if (op == 'apply' && getenv('REQUEST_METHOD') == 'POST')
 		handle_apply();
-	} else {
+	else {
 		out_headers();
 		out_json({ ok: false, error: 'bad request' });
 	}
