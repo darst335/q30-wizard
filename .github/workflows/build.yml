@@ -47,7 +47,10 @@ jobs:
           test -f files/usr/share/luci/menu.d/luci-q30-wizard.json
           test -f files/usr/share/rpcd/acl.d/luci-q30-wizard.json
           test -f files/etc/uci-defaults/99-q30wizard
-          chmod 755 files/www/cgi-bin/wizard files/etc/uci-defaults/99-q30wizard
+          chmod 755 files/etc/uci-defaults/* 2>/dev/null || true
+          # Contents API 推送的文件无执行位（100644），CGI 必须可执行，否则 uhttpd 403
+          find files/www/cgi-bin -type f -exec chmod 755 {} +
+          ls -la files/www/cgi-bin/
           # /etc/config/wizard 必须由 uci-defaults 在首启时生成（恢复出厂后才会再次触发向导）
           test ! -e files/etc/config/wizard
           find files -type f | sort
