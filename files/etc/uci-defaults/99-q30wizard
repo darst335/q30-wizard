@@ -1,0 +1,9 @@
+#!/bin/sh
+# Q30 quick wizard: first-boot hook
+chmod 755 /www/cgi-bin/wizard 2>/dev/null
+# 首次启动标记：让向导页知道这是「从未配置过」的新机器
+if [ ! -f /etc/config/wizard ]; then
+	printf "config main 'main'\n\toption done '0'\n\toption firstboot '1'\n" > /etc/config/wizard
+fi
+grep -q wizard.js /etc/sysupgrade.conf 2>/dev/null || printf "\n# Q30 quick wizard\n/www/index.html\n/www/wizard.html\n/www/cgi-bin/wizard\n/www/luci-static/resources/view/status/include/wizard.js\n/www/luci-static/resources/view/system/q30-wizard.js\n/usr/share/luci/menu.d/luci-q30-wizard.json\n/usr/share/rpcd/acl.d/luci-q30-wizard.json\n" >> /etc/sysupgrade.conf
+exit 0
