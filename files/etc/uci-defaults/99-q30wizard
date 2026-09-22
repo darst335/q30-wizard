@@ -6,4 +6,18 @@ if [ ! -f /etc/config/wizard ]; then
 	printf "config main 'main'\n\toption done '0'\n\toption firstboot '1'\n" > /etc/config/wizard
 fi
 grep -q wizard.js /etc/sysupgrade.conf 2>/dev/null || printf "\n# Q30 quick wizard\n/www/index.html\n/www/app.html\n/www/cgi-bin/router\n/www/wizard.html\n/www/cgi-bin/wizard\n/www/luci-static/resources/view/status/include/wizard.js\n/www/luci-static/resources/view/system/q30-wizard.js\n/usr/share/luci/menu.d/luci-q30-wizard.json\n/usr/share/rpcd/acl.d/luci-q30-wizard.json\n" >> /etc/sysupgrade.conf
+# 默认无线：SSID = Jcq- + 本机 MAC 后 4 位，密码 12345678（仅对 ap 接口生效）
+mac=$(cat /sys/class/ieee80211/phy0/macaddress 2>/dev/null)
+[ -n "$mac" ] || mac=$(cat /sys/class/net/eth0/address 2>/dev/null)
+if [ -n "$mac" ]; then
+	sfx=$(printf '%s' "$mac" | tr -d ':' | tr 'a-f' 'A-F' | tail -c 5)
+	ssid="Jcq-${sfx}"
+	for s in $(uci -q show wireless | sed -n 's/^wireless\.\(.*\)=wifi-iface$/\1/p'); do
+		[ "$(uci -q get wireless.$s.mode)" = "ap" ] || continue
+		uci set wireless.$s.ssid="$ssid"
+		uci set wireless.$s.encryption='psk2'
+		uci set wireless.$s.key='12345678'
+	done
+	uci commit wireless
+fi
 exit 0
