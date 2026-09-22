@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>快速设置 - JCG Q30 Pro</title>
+<style>
+:root { --bg:#f4f6f9; --card:#fff; --txt:#24292f; --sub:#57606a; --line:#d8dee4; --pri:#2f7dd1; --pri-h:#276cb5; --ok:#1a7f37; --err:#cf222e; --chip:#eaeef2; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#16181d; --card:#1f232b; --txt:#e6ebf0; --sub:#9aa4af; --line:#333a45; --pri:#4b95dd; --pri-h:#5ea5ea; --ok:#3fb950; --err:#f85149; --chip:#2a303a; }
+}
+* { box-sizing: border-box; }
+body { background:var(--bg); color:var(--txt); font-family:system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif; margin:0; padding:24px 12px 60px; }
+.wrap { max-width:520px; margin:0 auto; }
+h1 { font-size:20px; margin:0 0 4px; }
+.sub { color:var(--sub); font-size:13px; margin-bottom:18px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:14px; }
+.card h2 { font-size:15px; margin:0 0 12px; display:flex; align-items:center; gap:8px; }
+.step { display:inline-flex; width:22px; height:22px; border-radius:50%; background:var(--pri); color:#fff; font-size:12px; align-items:center; justify-content:center; flex:none; }
+label { display:block; font-size:13px; color:var(--sub); margin:10px 0 4px; }
+input[type=text],input[type=password],select { width:100%; padding:10px 11px; font-size:14px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--txt); outline:none; }
+input:focus,select:focus { border-color:var(--pri); }
+.radio-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+.radio-row label.opt { flex:1 1 100px; display:flex; align-items:center; justify-content:center; gap:6px; border:1px solid var(--line); border-radius:8px; padding:10px 6px; font-size:13px; color:var(--txt); margin:0; cursor:pointer; }
+.radio-row input { display:none; }
+.radio-row label.opt.on { border-color:var(--pri); background:color-mix(in srgb, var(--pri) 12%, transparent); color:var(--pri); font-weight:600; }
+.check-row { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--txt); margin:10px 0 2px; }
+.check-row input { width:16px; height:16px; accent-color:var(--pri); }
+.hint { font-size:12px; color:var(--sub); margin-top:4px; }
+.btn { width:100%; padding:13px; font-size:16px; font-weight:600; border:none; border-radius:10px; background:var(--pri); color:#fff; cursor:pointer; margin-top:6px; }
+.btn:disabled { opacity:.55; cursor:default; }
+.btn:hover:not(:disabled) { background:var(--pri-h); }
+#result { display:none; text-align:center; }
+#result .big { font-size:34px; margin:6px 0; }
+.ok { color:var(--ok); } .bad { color:var(--err); }
+.errlist { background:color-mix(in srgb, var(--err) 10%, transparent); border:1px solid var(--err); color:var(--err); border-radius:8px; padding:10px 12px; font-size:13px; margin-bottom:12px; display:none; text-align:left; }
+.spin { display:inline-block; width:16px; height:16px; border:2px solid var(--line); border-top-color:var(--pri); border-radius:50%; animation:sp .8s linear infinite; vertical-align:-3px; margin-right:6px; }
+@keyframes sp { to { transform:rotate(360deg); } }
+.hidden { display:none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>路由器快速设置</h1>
+  <div class="sub">JCG Q30 Pro · 首次配置向导 · 只需一分钟</div>
+
+  <div class="errlist" id="errbox"></div>
+
+  <div id="form">
+    <div class="card">
+      <h2><span class="step">1</span>设置路由器管理密码</h2>
+      <label for="ap">管理密码（至少 5 位，可留空使用无密码）</label>
+      <input type="password" id="ap" autocomplete="new-password" placeholder="留空 = 不设置密码">
+      <label for="ap2">确认密码</label>
+      <input type="password" id="ap2" autocomplete="new-password" placeholder="再次输入相同密码">
+    </div>
+
+    <div class="card">
+      <h2><span class="step">2</span>选择上网方式</h2>
+      <div class="radio-row" id="protoRow">
+        <label class="opt on"><input type="radio" name="proto" value="dhcp" checked>自动获取（DHCP）</label>
+        <label class="opt"><input type="radio" name="proto" value="pppoe">宽带拨号（PPPoE）</label>
+        <label class="opt"><input type="radio" name="proto" value="static">手动指定 IP</label>
+      </div>
+      <div id="secPppoe" class="hidden">
+        <label for="puser">宽带账号</label>
+        <input type="text" id="puser" placeholder="运营商提供的宽带账号">
+        <label for="ppass">宽带密码</label>
+        <input type="password" id="ppass" autocomplete="new-password" placeholder="运营商提供的宽带密码">
+      </div>
+      <div id="secStatic" class="hidden">
+        <label for="sip">IP 地址</label>
+        <input type="text" id="sip" placeholder="例如 192.168.10.2">
+        <label for="smask">子网掩码</label>
+        <input type="text" id="smask" value="255.255.255.0">
+        <label for="sgw">网关</label>
+        <input type="text" id="sgw" placeholder="例如 192.168.10.1">
+        <label for="sdns">DNS 服务器（可填多个，用空格分隔）</label>
+        <input type="text" id="sdns" placeholder="例如 223.5.5.5 114.114.114.114">
+      </div>
+      <div class="hint">不确定选哪个？光猫拨号选「自动获取」，电脑上需要点「宽带连接」选「宽带拨号」。</div>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">3</span>设置 Wi-Fi 名称和密码</h2>
+      <label for="ssid">Wi-Fi 名称（2.4G）</label>
+      <input type="text" id="ssid" maxlength="32" placeholder="例如 MyHome-WiFi">
+      <div class="check-row"><input type="checkbox" id="same5g" checked><label for="same5g" style="margin:0">5G 使用相同的名称和密码（推荐）</label></div>
+      <div id="sec5g" class="hidden">
+        <label for="ssid5">Wi-Fi 名称（5G）</label>
+        <input type="text" id="ssid5" maxlength="32" placeholder="例如 MyHome-WiFi-5G">
+      </div>
+      <label for="enc">加密方式</label>
+      <select id="enc">
+        <option value="sae-mixed" selected>WPA2/WPA3 混合（推荐）</option>
+        <option value="psk2">WPA2-PSK（兼容旧设备）</option>
+        <option value="sae">仅 WPA3（新一代设备）</option>
+        <option value="none">不加密（开放网络）</option>
+      </select>
+      <div id="secKey">
+        <label for="key">Wi-Fi 密码（8–63 位）</label>
+        <input type="password" id="key" autocomplete="new-password" placeholder="手机连接 Wi-Fi 时输入的密码">
+      </div>
+    </div>
+
+    <button class="btn" id="go" onclick="submit()">完成设置</button>
+    <div class="hint" style="text-align:center;margin-top:10px">点击后路由器会应用新配置（约 20–40 秒），期间请勿断电。</div>
+  </div>
+
+  <div class="card" id="result">
+    <div id="resIcon" class="big"></div>
+    <h2 id="resTitle" style="justify-content:center"></h2>
+    <div id="resBody" class="hint" style="font-size:13px;line-height:1.8"></div>
+  </div>
+</div>
+
+<script>
+var $ = function (id) { return document.getElementById(id); };
+
+// proto switching
+function syncProto() {
+  var v = document.querySelector('input[name=proto]:checked').value;
+  $('secPppoe').classList.toggle('hidden', v !== 'pppoe');
+  $('secStatic').classList.toggle('hidden', v !== 'static');
+}
+document.querySelectorAll('input[name=proto]').forEach(function (r) {
+  r.addEventListener('change', function () {
+    document.querySelectorAll('#protoRow label.opt').forEach(function (l) { l.classList.remove('on'); });
+    r.closest('label.opt').classList.add('on');
+    syncProto();
+  });
+});
+$('same5g').addEventListener('change', function () {
+  $('sec5g').classList.toggle('hidden', $('same5g').checked);
+  $('ssid5').value = $('same5g').checked ? '' : $('ssid5').value;
+});
+$('enc').addEventListener('change', function () {
+  $('secKey').classList.toggle('hidden', $('enc').value === 'none');
+});
+syncProto();
+
+function isIp(s) { return /^\d{1,3}(\.\d{1,3}){3}$/.test(s) && s.split('.').every(function (x) { return +x >= 0 && +x <= 255; }); }
+
+function err(msgs) {
+  var b = $('errbox');
+  if (!msgs || !msgs.length) { b.style.display = 'none'; return; }
+  b.innerHTML = msgs.map(function (m) { return '· ' + m; }).join('<br>');
+  b.style.display = 'block';
+  b.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function submit() {
+  var e = [];
+  var ap = $('ap').value, ap2 = $('ap2').value;
+  if (ap || ap2) {
+    if (ap.length < 5) e.push('管理密码至少 5 位');
+    if (ap !== ap2) e.push('两次输入的管理密码不一致');
+  }
+  var proto = document.querySelector('input[name=proto]:checked').value;
+  if (proto === 'pppoe') {
+    if (!$('puser').value.trim()) e.push('请填写宽带账号');
+    if (!$('ppass').value) e.push('请填写宽带密码');
+  }
+  if (proto === 'static') {
+    if (!isIp($('sip').value.trim())) e.push('静态 IP 地址格式不正确');
+    if (!isIp($('smask').value.trim())) e.push('子网掩码格式不正确');
+    if (!isIp($('sgw').value.trim())) e.push('网关地址格式不正确');
+  }
+  var enc = $('enc').value;
+  var ssid = $('ssid').value.trim();
+  var key = $('key').value;
+  if (!ssid) e.push('请填写 Wi-Fi 名称');
+  if (enc !== 'none' && (key.length < 8 || key.length > 63)) e.push('Wi-Fi 密码需要 8–63 位');
+  if (e.length) { err(e); return; }
+  err([]);
+
+  var btn = $('go');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>正在应用配置，请勿断电…';
+
+  var body = {
+    adminpass: ap, proto: proto,
+    pppoeuser: $('puser').value.trim(), pppoepass: $('ppass').value,
+    sip: $('sip').value.trim(), smask: $('smask').value.trim(), sgw: $('sgw').value.trim(), sdns: $('sdns').value.trim(),
+    ssid: ssid, ssid5: $('same5g').checked ? ssid : $('ssid5').value.trim(),
+    enc: enc, key: enc === 'none' ? '' : key
+  };
+  var qs = Object.keys(body).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(body[k]); }).join('&');
+
+  fetch('cgi-bin/wizard?op=apply', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: qs })
+    .then(function (r) { return r.json(); })
+    .then(function (res) {
+      if (res && res.ok) {
+        $('form').style.display = 'none';
+        $('result').style.display = 'block';
+        $('resIcon').innerHTML = '✅'; $('resIcon').className = 'big ok';
+        $('resTitle').textContent = '设置已保存！';
+        var html = '路由器正在应用新配置，约 20–40 秒后生效。<br><br>';
+        html += '<b>新的 Wi-Fi：</b> ' + body.ssid + (body.ssid5 && body.ssid5 !== body.ssid ? ' / ' + body.ssid5 : '') + '<br>';
+        if (body.key) html += '<b>Wi-Fi 密码：</b> ' + body.key.replace(/./g, '•').slice(0, 12) + '<br><br>';
+        html += '请用新 Wi-Fi 密码重新连接网络，然后访问 <b>192.168.1.1</b> 进入管理界面。';
+        $('resBody').innerHTML = html;
+      } else {
+        btn.disabled = false; btn.textContent = '完成设置';
+        err([(res && res.error) || '应用失败，请重试'].concat(res && res.errors || []));
+      }
+    })
+    .catch(function () {
+      btn.disabled = false; btn.textContent = '完成设置';
+      err(['无法连接路由器，请确认网络后重试']);
+    });
+}
+</script>
+</body>
+</html>
