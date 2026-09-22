@@ -126,6 +126,15 @@ table.clients .st.off { background:#c3cad6; }
 .spin { width:34px; height:34px; border:4px solid #dfe5ef; border-top-color:#2f6fd6; border-radius:50%; margin:0 auto 16px; animation:sp 1s linear infinite; }
 @keyframes sp { to { transform:rotate(360deg); } }
 @media (max-width:860px){ .grid2{grid-template-columns:1fr} #sidebar{width:170px} .ports{grid-template-columns:repeat(2,1fr)} }
+
+/* ---------- mesh topo ---------- */
+.mnode { border:1px solid #dfe5ef; border-radius:10px; padding:12px 14px; background:#f8fafd; max-width:420px; }
+.mnode.main { border-color:#9dc0f0; background:#f0f6ff; }
+.mnode .mn-hd { font-weight:600; color:#16244a; margin-bottom:6px; }
+.mnode .mn-ln { font-size:13px; color:#5a6a85; line-height:1.7; word-break:break-all; }
+.mnode .tag { display:inline-block; font-size:11px; background:#2f6fd6; color:#fff; border-radius:4px; padding:1px 7px; margin-left:6px; vertical-align:1px; }
+.mnode .tag.sub { background:#2e9e5b; }
+.mlink { width:2px; height:20px; background:#9db6dd; margin-left:32px; }
 </style>
 </head>
 <body>
@@ -146,7 +155,7 @@ table.clients .st.off { background:#c3cad6; }
   <div id="topbar">
     <div class="brand"><span class="ic"></span><span id="tb-name">Q30 Pro</span></div>
     <div class="right">
-      <button class="lucibtn" onclick="window.open('/cgi-bin/luci/','_blank')">专家模式 (LuCI)</button>
+      <button class="lucibtn" onclick="window.open('/cgi-bin/router?op=luci_sso','_blank')">专家模式 (LuCI)</button>
       <button class="out" id="logout-btn">退出登录</button>
     </div>
   </div>
@@ -156,6 +165,7 @@ table.clients .st.off { background:#c3cad6; }
       <div class="nav" data-p="wan"><i class="ico">🌐</i>上网设置</div>
       <div class="nav" data-p="wifi"><i class="ico">📶</i>Wi-Fi 设置</div>
       <div class="nav" data-p="mesh"><i class="ico">🕸</i>Mesh 组网</div>
+      <div class="nav" data-p="relay"><i class="ico">📡</i>无线桥接</div>
       <div class="nav" data-p="lan"><i class="ico">☷</i>局域网设置</div>
       <div class="sep"></div>
       <div class="nav" data-p="system"><i class="ico">⚙</i>系统管理</div>
@@ -265,14 +275,47 @@ table.clients .st.off { background:#c3cad6; }
         <h2 class="pg">Mesh 组网</h2>
         <div class="card">
           <h3>无线 Mesh 组网（802.11s）<span style="float:right"><label class="switch"><input type="checkbox" id="mesh-en"><i></i></label></span></h3>
-          <div class="hint" style="margin-bottom:14px">多台路由器无线互联、扩展覆盖（默认关闭）。本路由与另一台开启 Mesh 的路由器使用<strong>相同的 Mesh 名称和密码</strong>即可自动组网，子路由无需网线，会同步上网设置。</div>
+          <div class="hint" style="margin-bottom:14px">Mesh 网络由一台<strong>主 Mesh 路由器</strong>和一台或多台<strong>子 Mesh 路由器</strong>组成：主路由器连接光猫/宽带负责上网；子路由只需接通电源，放在主路由信号覆盖范围内即可通过无线回程自动接入主路由，<strong>无需网线连接</strong>。两台路由器的 Mesh 名称和密码必须设置成一样的。默认关闭。</div>
           <div id="mesh-opts" style="display:none">
+            <div class="field"><label>本机角色</label>
+              <div class="radio-row" id="mesh-role-row">
+                <label class="radio-card on"><input type="radio" name="meshrole" value="main" checked>主 Mesh 路由器（连接宽带，负责上网）</label>
+                <label class="radio-card"><input type="radio" name="meshrole" value="sub">子 Mesh 路由器（无线回程接入主路由）</label>
+              </div>
+            </div>
             <div class="field"><label>Mesh 名称</label><input type="text" id="mesh-id" maxlength="32" placeholder="例：Home-Mesh"></div>
             <div class="field"><label>Mesh 密码（8-63 位）</label><input type="password" id="mesh-key" maxlength="63"></div>
           </div>
           <div class="msg" id="mesh-msg"></div>
           <button class="btn" id="mesh-save">保存并应用</button>
-          <div class="hint">保存后无线会短暂重启。开启前请先在此设置名称和密码；两台路由器参数必须一致。</div>
+          <div class="hint">保存后无线会短暂重启。子路由的 LAN 口也可以网线连接电脑等终端设备。</div>
+        </div>
+        <div class="card" id="mesh-topo-card" style="display:none">
+          <h3>Mesh 网络拓扑 <span style="float:right"><button class="btn gray" style="padding:4px 12px;font-size:12px" id="mesh-topo-refresh">刷新拓扑</button></span></h3>
+          <div id="mesh-topo"></div>
+        </div>
+      </div>
+
+      <!-- 无线桥接 -->
+      <div class="page" id="pg-relay">
+        <h2 class="pg">无线桥接</h2>
+        <div class="card">
+          <h3>无线桥接（中继上级 Wi-Fi）<span style="float:right"><label class="switch"><input type="checkbox" id="relay-en"><i></i></label></span></h3>
+          <div class="hint" style="margin-bottom:14px">把本路由器作为子设备，无线接入上级路由器的 Wi-Fi（类似中继/放大信号）。默认关闭。</div>
+          <div id="relay-opts" style="display:none">
+            <div class="field"><label>频段</label>
+              <select id="relay-band">
+                <option value="0">2.4G（穿透好，覆盖远，推荐）</option>
+                <option value="1">5G（速度快，距离近）</option>
+              </select></div>
+            <div class="field"><label>上级 Wi-Fi 名称 <button class="btn gray" id="relay-scan" style="float:right;padding:4px 12px;font-size:12px">扫描周边 Wi-Fi</button></label><input type="text" id="relay-ssid" maxlength="32"></div>
+            <div id="relay-list"></div>
+            <div class="field"><label>上级 Wi-Fi 密码（8-63 位）</label><input type="password" id="relay-key" maxlength="63"></div>
+            <div class="field"><label>同时关闭本机 DHCP 服务（推荐，避免与上级路由器冲突） <input type="checkbox" id="relay-dhcp" checked style="accent-color:#2f6fd6;margin-left:8px"></label></div>
+          </div>
+          <div class="msg" id="relay-msg"></div>
+          <button class="btn" id="relay-save">保存并应用</button>
+          <div class="hint">注意：开启桥接后本路由器 LAN 网段与上级路由器相同，终端将统一由上级路由器分配 IP；扫描时对应频段的 Wi-Fi 会短暂中断。点击下方扫描结果可直接填入名称。</div>
         </div>
       </div>
 
@@ -315,6 +358,17 @@ table.clients .st.off { background:#c3cad6; }
           <div class="hint" style="margin-bottom:14px">重启约需 1 分钟；恢复出厂会清除全部配置（含 Wi-Fi 名称和密码），重启后自动进入快速设置向导。</div>
           <button class="btn gray" id="btn-reboot">重启路由器</button>
           <button class="btn red" id="btn-factory" style="margin-left:10px">恢复出厂设置</button>
+        </div>
+      </div>
+
+      <!-- 快速设置向导（应用内） -->
+      <div class="page" id="pg-wizard">
+        <h2 class="pg">快速设置向导</h2>
+        <div class="card">
+          <div class="hint" style="margin-bottom:12px">重新运行首次开箱的设置向导（管理密码 / 上网方式 / Wi-Fi）。在向导中确认保存前，现有配置不会被更改。</div>
+          <button class="btn gray" id="wiz-back">← 后退（取消向导）</button>
+          <div style="height:14px"></div>
+          <iframe id="wiz-frame" src="about:blank" style="width:100%;height:640px;border:1px solid #dfe5ef;border-radius:10px;background:#fff"></iframe>
         </div>
       </div>
 
@@ -371,7 +425,6 @@ $('logout-btn').onclick=function(){ api('logout',{},function(){ showLogin(''); }
 var navs=document.querySelectorAll('#sidebar .nav');
 for (var i=0;i<navs.length;i++) navs[i].onclick=function(){ go(this.dataset.p); };
 function go(p){
-  if(p==='wizard'){ window.open('/wizard.html','_blank'); return; }
   cur=p;
   for (var i=0;i<navs.length;i++) navs[i].classList.toggle('on', navs[i].dataset.p===p);
   var pgs=document.querySelectorAll('.page');
@@ -383,8 +436,10 @@ function load(p){
   else if(p==='wan') loadWan();
   else if(p==='wifi') loadWifi();
   else if(p==='mesh') loadMesh();
+  else if(p==='relay') loadRelay();
   else if(p==='lan') loadLan();
   else if(p==='system') loadSystem();
+  else if(p==='wizard') $('wiz-frame').src='/cgi-bin/wizard?op=page&t='+Date.now();
 }
 
 /* ---------- 总览 ---------- */
@@ -495,6 +550,12 @@ $('wifi-save').onclick=function(){
 };
 
 /* ---------- Mesh ---------- */
+function pickMeshRole(v){
+  var rows=document.querySelectorAll('#mesh-role-row .radio-card');
+  for (var i=0;i<rows.length;i++) rows[i].classList.toggle('on', rows[i].querySelector('input').value===v);
+}
+var meshRoles=document.querySelectorAll('input[name=meshrole]');
+for (var mi=0;mi<meshRoles.length;mi++) meshRoles[mi].onchange=function(){ pickMeshRole(this.value); };
 function loadMesh(){
   api('mesh_get',{},function(j){
     if(needLogin(j)) return;
@@ -502,16 +563,92 @@ function loadMesh(){
     $('mesh-en').checked=!!j.enabled;
     $('mesh-id').value=j.mesh_id||'';
     $('mesh-key').value='';
+    pickMeshRole(j.role==='sub'?'sub':'main');
     $('mesh-opts').style.display=j.enabled?'':'none';
+    $('mesh-topo-card').style.display='none';
+    if(j.enabled) loadMeshTopo();
   });
 }
+function loadMeshTopo(){
+  api('mesh_topo',{},function(j){
+    if(needLogin(j)) return;
+    if(!j.ok||!j.enabled){ $('mesh-topo-card').style.display='none'; return; }
+    $('mesh-topo-card').style.display='';
+    var h='<div class="mnode main"><div class="mn-hd">'+(j.role==='sub'?'子 Mesh 路由器':'主 Mesh 路由器')
+      +'<span class="tag '+(j.role==='sub'?'sub':'')+'">本机</span></div>'
+      +'<div class="mn-ln">IP 地址：'+esc(j.self_ip)+'</div>';
+    for (var i=0;i<(j.self_macs||[]).length;i++)
+      h+='<div class="mn-ln">'+j.self_macs[i].band+' 回程 MAC：'+esc(j.self_macs[i].mac)+'</div>';
+    h+='</div>';
+    var list=j.nodes||[];
+    if(!list.length)
+      h+='<div class="hint" style="margin-top:10px">尚未发现其他 Mesh 节点。请确认子路由已接通电源、开启 Mesh 且 Mesh 名称和密码与本机一致，然后点击「刷新拓扑」。</div>';
+    for (var k=0;k<list.length;k++){
+      var n=list[k];
+      var sig=(n.signal>-55)?'信号优':(n.signal>-70)?'信号良':'信号弱';
+      h+='<div class="mlink"></div><div class="mnode sub"><div class="mn-hd">Mesh 节点（'+n.band+'）<span class="tag sub">子路由</span></div>'
+        +'<div class="mn-ln">IP 地址：'+(n.ip?esc(n.ip):'获取中（未获取到 IP）')+'</div>'
+        +'<div class="mn-ln">MAC 地址：'+esc((n.mac||'').toUpperCase())+'</div>'
+        +'<div class="mn-ln">信号强度：'+n.signal+' dBm（'+sig+'）</div></div>';
+    }
+    $('mesh-topo').innerHTML=h;
+  });
+}
+$('mesh-topo-refresh').onclick=function(){ loadMeshTopo(); };
 $('mesh-en').onchange=function(){ $('mesh-opts').style.display=this.checked?'':'none'; };
 $('mesh-save').onclick=function(){
   var m=$('mesh-msg'); m.className='msg'; m.textContent='';
-  api('mesh_set',{enabled:$('mesh-en').checked?'1':'0',mesh_id:$('mesh-id').value,key:$('mesh-key').value},function(j){
+  var role='main';
+  var rr=document.querySelector('input[name=meshrole]:checked');
+  if(rr) role=rr.value;
+  api('mesh_set',{enabled:$('mesh-en').checked?'1':'0',mesh_id:$('mesh-id').value,key:$('mesh-key').value,role:role},function(j){
+    if(needLogin(j)) return;
+    m.className='msg '+(j.ok?'ok':'err'); m.textContent=j.ok?(j.msg||'设置成功'):(j.error||'设置失败');
+    if(j.ok) setTimeout(loadMesh,6000);
+  });
+};
+
+/* ---------- 无线桥接 ---------- */
+function loadRelay(){
+  api('relay_get',{},function(j){
+    if(needLogin(j)) return;
+    if(!j.ok) return;
+    $('relay-en').checked=!!j.enabled;
+    $('relay-band').value=j.band||'0';
+    $('relay-ssid').value=j.ssid||'';
+    $('relay-key').value='';
+    $('relay-dhcp').checked=true;
+    $('relay-opts').style.display=j.enabled?'':'none';
+  });
+}
+$('relay-en').onchange=function(){ $('relay-opts').style.display=this.checked?'':'none'; };
+$('relay-scan').onclick=function(){
+  var b=$('relay-scan'); b.disabled=true; b.textContent='扫描中…';
+  api('relay_scan',{band:$('relay-band').value},function(j){
+    b.disabled=false; b.textContent='扫描周边 Wi-Fi';
+    var el=$('relay-list');
+    if(!j.ok){ el.innerHTML='<div class="hint">'+esc(j.error||'扫描失败')+'</div>'; return; }
+    if(!j.list.length){ el.innerHTML='<div class="hint">未扫描到网络，请重试。</div>'; return; }
+    var h='<table class="clients" style="margin-top:10px"><thead><tr><th>Wi-Fi 名称（点击选择）</th><th>信号</th><th>信道</th><th>加密</th></tr></thead><tbody>';
+    for (var i=0;i<j.list.length;i++){
+      var a=j.list[i];
+      h+='<tr style="cursor:pointer" onclick="pickAp(this)"><td>'+esc(a.ssid)+'</td><td>'+a.signal+' dBm</td><td>'+a.chan+'</td><td>'+esc(a.enc)+'</td></tr>';
+    }
+    el.innerHTML=h+'</tbody></table>';
+  });
+};
+function pickAp(tr){ $('relay-ssid').value=tr.cells[0].textContent; }
+$('relay-save').onclick=function(){
+  var m=$('relay-msg'); m.className='msg'; m.textContent='';
+  api('relay_set',{enabled:$('relay-en').checked?'1':'0',band:$('relay-band').value,ssid:$('relay-ssid').value,key:$('relay-key').value,close_dhcp:$('relay-dhcp').checked?'1':'0'},function(j){
     if(needLogin(j)) return;
     m.className='msg '+(j.ok?'ok':'err'); m.textContent=j.ok?(j.msg||'设置成功'):(j.error||'设置失败');
   });
+};
+
+/* ---------- 向导（应用内） ---------- */
+$('wiz-back').onclick=function(){
+  if(confirm('确定取消向导并返回总览吗？未保存的设置不会生效。')) go('overview');
 };
 
 /* ---------- LAN ---------- */
