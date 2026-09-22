@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q30 Wizard · 界面预览 / UI Preview</title>
+<style>
+  :root { --bg:#f5f7fb; --txt:#1c2333; --line:#d4dae5; --blue:#2f6fd6; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:"Segoe UI","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--txt);
+         min-height:100vh; display:flex; align-items:center; justify-content:center; }
+  .viewer { width:min(960px,94vw); background:#fff; border:1px solid var(--line); border-radius:14px;
+            padding:22px 26px 18px; box-shadow:0 6px 24px rgba(28,35,51,.08); }
+  h1 { font-size:18px; margin-bottom:4px; }
+  .sub { font-size:13px; color:#66708a; margin-bottom:14px; }
+  .sub a { color:var(--blue); text-decoration:none; }
+  .stage { position:relative; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#eef1f7; }
+  .slide { display:none; }
+  .slide.on { display:block; }
+  .slide img { width:100%; display:block; }
+  .cap { position:absolute; left:0; right:0; bottom:0; padding:8px 14px; font-size:13px;
+         background:linear-gradient(transparent,rgba(0,0,0,.55)); color:#fff; }
+  .nav { display:flex; align-items:center; justify-content:space-between; margin-top:14px; gap:12px; }
+  button { border:1px solid var(--line); background:#fff; color:var(--txt); border-radius:8px;
+           padding:8px 18px; font-size:14px; cursor:pointer; }
+  button:hover { border-color:var(--blue); color:var(--blue); }
+  .dots { display:flex; gap:7px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:#c9d2e4; cursor:pointer; }
+  .dot.on { background:var(--blue); }
+  .cnt { font-size:13px; color:#66708a; min-width:48px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="viewer">
+  <h1>Q30 Wizard · 界面预览 / UI Preview</h1>
+  <div class="sub">← → 方向键翻页 · Arrow keys to navigate · <a href="../README.md">README</a></div>
+  <div class="stage" id="stage"></div>
+  <div class="nav">
+    <button id="prev">‹ 上一个 / Prev</button>
+    <div class="dots" id="dots"></div>
+    <span class="cnt" id="cnt"></span>
+    <button id="next">下一个 / Next ›</button>
+  </div>
+</div>
+<script>
+var slides = [
+  { src:'images/ui-wifi.png',  cap:'Wi-Fi 设置（含信道/频宽/功率高级参数） · Wi-Fi settings with advanced parameters' },
+  { src:'images/ui-wizard.png',cap:'快速设置向导 · Quick setup wizard' },
+  { src:'images/ui-lan.png',   cap:'局域网设置 · LAN settings' },
+  { src:'images/ui-login.png', cap:'登录页 · Login' }
+];
+var i = 0, stage = document.getElementById('stage'), dots = document.getElementById('dots');
+slides.forEach(function(s, k){
+  var d = document.createElement('div');
+  d.className = 'slide' + (k === 0 ? ' on' : '');
+  d.innerHTML = '<img src="' + s.src + '" alt=""><div class="cap">' + s.cap + '</div>';
+  stage.appendChild(d);
+  var dot = document.createElement('span');
+  dot.className = 'dot' + (k === 0 ? ' on' : '');
+  dot.onclick = function(){ go(k); };
+  dots.appendChild(dot);
+});
+function go(k){
+  i = (k + slides.length) % slides.length;
+  document.querySelectorAll('.slide').forEach(function(el, n){ el.classList.toggle('on', n === i); });
+  document.querySelectorAll('.dot').forEach(function(el, n){ el.classList.toggle('on', n === i); });
+  document.getElementById('cnt').textContent = (i + 1) + ' / ' + slides.length;
+}
+document.getElementById('prev').onclick = function(){ go(i - 1); };
+document.getElementById('next').onclick = function(){ go(i + 1); };
+document.addEventListener('keydown', function(e){
+  if (e.key === 'ArrowLeft') go(i - 1);
+  if (e.key === 'ArrowRight') go(i + 1);
+});
+go(0);
+</script>
+</body>
+</html>
