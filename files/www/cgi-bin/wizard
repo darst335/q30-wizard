@@ -1,0 +1,266 @@
+#!/usr/bin/ucode
+// Q30 Pro quick setup wizard backend (ucode CGI)
+// GET  ?op=state  -> {done, model}
+// POST ?op=apply  -> apply admin password / wan / wifi, mark done
+
+'use strict';
+
+import { readfile, writefile, open, popen } from 'fs';
+import { cursor } from 'uci';
+
+const MARK_FILE = '/etc/config/wizard';
+const ENC_OK = ['none', 'psk2', 'sae', 'sae-mixed'];
+
+function out_headers() {
+	printf('Content-Type: application/json; charset=utf-8\r\n');
+	printf('Cache-Control: no-store\r\n');
+	printf('\r\n');
+}
+
+function out_json(v) {
+	printf('%J', v);
+}
+
+function urldecode(s) {
+	s = replace(s ?? '', /\+/g, ' ');
+	let out = '';
+	let i = 0;
+	const len = length(s);
+	while (i < len) {
+		if (substr(s, i, 1) == '%') {
+			const h = substr(s, i + 1, 2);
+			const c = hex(h);
+			out += (c != null) ? chr(c) : '';
+			i += 3;
+		} else {
+			out += substr(s, i, 1);
+			i += 1;
+		}
+	}
+	return out;
+}
+
+function parse_qs(s) {
+	const m = {};
+	for (let pair in split(s ?? '', '&')) {
+		if (!length(pair))
+			continue;
+		const idx = index(pair, '=');
+		if (idx == -1)
+			m[urldecode(pair)] = '';
+		else
+			m[urldecode(substr(pair, 0, idx))] = urldecode(substr(pair, idx + 1));
+	}
+	return m;
+}
+
+function is_ip(s) {
+	const m = match(s ?? '', /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+	if (m == null)
+		return false;
+	for (let i = 1; i <= 4; i++) {
+		const n = int(m[i]);
+		if (n == null || n < 0 || n > 255)
+			return false;
+	}
+	return true;
+}
+
+function wizard_done() {
+	const cfg = readfile(MARK_FILE);
+	if (cfg == null)
+		return false;
+	const m = match(cfg, /done\s+'([01])'/);
+	return (m != null) ? (m[1] == '1') : false;
+}
+
+// firstboot 遗留标记：由 /etc/uci-defaults/99-q30wizard 在首次启动时写入，
+// 用户完成或主动跳过一次向导后由 CGI 删除，用于区分「从未配置过」与「已跳过」。
+function firstboot_pending() {
+	const uci = cursor();
+	return (uci.get('wizard', 'main', 'firstboot') == '1');
+}
+
+function mark_done() {
+	cursor().delete('wizard', 'main', 'firstboot');
+	writefile(MARK_FILE, "config main 'main'\n\toption done '1'\n");
+}
+
+function apply_adminpass(pass) {
+	const p = popen('chpasswd 2>/dev/null', 'w');
+	if (p == null)
+		return 'chpasswd 不可用';
+	p.write('root:' + pass + '\n');
+	p.close();
+	return null;
+}
+
+function apply_wan(c, v, errors) {
+	if (v.proto == 'pppoe') {
+		c.set('network', 'wan', 'proto', 'pppoe');
+		c.set('network', 'wan', 'username', v.pppoeuser);
+		c.set('network', 'wan', 'password', v.pppoepass);
+		c.delete('network', 'wan', 'ipaddr');
+		c.delete('network', 'wan', 'netmask');
+		c.delete('network', 'wan', 'gateway');
+	} else if (v.proto == 'static') {
+		c.set('network', 'wan', 'proto', 'static');
+		c.set('network', 'wan', 'ipaddr', v.sip);
+		c.set('network', 'wan', 'netmask', v.smask);
+		c.set('network', 'wan', 'gateway', v.sgw);
+		c.delete('network', 'wan', 'username');
+		c.delete('network', 'wan', 'password');
+		if (length(v.sdns ?? '')) {
+			const list = split(v.sdns, /[ ]+/);
+			const ok = [];
+			for (let d in list)
+				if (is_ip(d))
+					push(ok, d);
+			if (length(ok))
+				c.set('network', 'wan', 'dns', ok);
+		} else {
+			c.delete('network', 'wan', 'dns');
+		}
+	} else {
+		c.set('network', 'wan', 'proto', 'dhcp');
+		c.delete('network', 'wan', 'ipaddr');
+		c.delete('network', 'wan', 'netmask');
+		c.delete('network', 'wan', 'gateway');
+		c.delete('network', 'wan', 'username');
+		c.delete('network', 'wan', 'password');
+		c.delete('network', 'wan', 'dns');
+	}
+}
+
+function apply_wifi(c, v, errors) {
+	const plan = {
+		radio0: { ssid: v.ssid, enc: v.enc, key: v.key },
+		radio1: { ssid: v.ssid5, enc: v.enc, key: v.key }
+	};
+	c.foreach('wireless', 'wifi-iface', function (s) {
+		const dev = s.device;
+		if (dev != 'radio0' && dev != 'radio1')
+			return;
+		const p = plan[dev];
+		if (p == null)
+			return;
+		c.set('wireless', s['.name'], 'ssid', p.ssid);
+		c.set('wireless', s['.name'], 'encryption', p.enc);
+		if (p.enc == 'none')
+			c.delete('wireless', s['.name'], 'key');
+		else
+			c.set('wireless', s['.name'], 'key', p.key);
+		c.set('wireless', s['.name'], 'disabled', '0');
+	});
+}
+
+function handle_state() {
+	const model = readfile('/tmp/sysinfo/model');
+	const done = wizard_done();
+	const pending = firstboot_pending();
+	out_json({
+		done: done,
+		firstboot: pending,
+		// 仅「从未使用过向导的首启阶段」才自动跳转，避免刷机后每次开机都强制跳
+		wizard: (!done && pending),
+		model: (model != null) ? replace(model, /\s+$/, '') : ''
+	});
+}
+
+// op=page：把向导页作为 HTML 输出（供 LuCI 视图 iframe 内嵌）
+function handle_page() {
+	printf('Content-Type: text/html; charset=utf-8\r\n');
+	printf('Cache-Control: no-store\r\n');
+	printf('\r\n');
+	const html = readfile('/www/wizard.html');
+	if (html == null)
+		printf('<h2>wizard.html 缺失</h2>');
+	else {
+		// iframe 内嵌时把内部相对链接指向根路径，避免解析成 /cgi-bin/xxx
+		printf('%s', replace(html, /(href|src|fetch\()'([^']*)'/g, "$1'/$2'"));
+	}
+}
+
+function handle_apply() {	if (wizard_done()) {
+		out_json({ ok: false, error: '向导已完成，请通过管理界面修改配置' });
+		return;
+	}
+
+	const len = int(getenv('CONTENT_LENGTH') ?? '0');
+	const stdin = open('/dev/stdin', 'r');
+	const body = (len != null && len > 0 && stdin != null) ? stdin.read(len) : '';
+	const v = parse_qs(body);
+
+	const errors = [];
+
+	// --- validate ---
+	if (v.proto != 'dhcp' && v.proto != 'pppoe' && v.proto != 'static') {
+		out_json({ ok: false, error: '未知的上网方式' });
+		return;
+	}
+	if (v.proto == 'pppoe') {
+		if (!length(v.pppoeuser ?? '') || !length(v.pppoepass ?? ''))
+			errors.push('宽带账号或密码为空');
+	}
+	if (v.proto == 'static') {
+		if (!is_ip(v.sip) || !is_ip(v.smask) || !is_ip(v.sgw))
+			errors.push('静态 IP 参数格式错误');
+	}
+	if (!length(v.ssid ?? '') || length(v.ssid) > 32)
+		errors.push('2.4G Wi-Fi 名称不合法');
+	if (!length(v.ssid5 ?? '') || length(v.ssid5) > 32)
+		errors.push('5G Wi-Fi 名称不合法');
+	if (index(ENC_OK, v.enc) == -1)
+		errors.push('不支持的加密方式');
+	if (v.enc != 'none' && (length(v.key ?? '') < 8 || length(v.key) > 63))
+		errors.push('Wi-Fi 密码需要 8-63 位');
+
+	if (length(errors)) {
+		out_json({ ok: false, errors: errors });
+		return;
+	}
+
+	// --- apply: admin password ---
+	if (length(v.adminpass ?? '')) {
+		const e = apply_adminpass(v.adminpass);
+		if (e != null)
+			errors.push(e);
+	}
+
+	// --- apply: uci configs ---
+	const c = cursor();
+	apply_wan(c, v, errors);
+	apply_wifi(c, v, errors);
+	c.save('network');
+	c.commit('network');
+	c.save('wireless');
+	c.commit('wireless');
+
+	// --- apply network in background, then mark done ---
+	system('(sleep 1; /etc/init.d/network restart; sleep 3; /sbin/wifi reload) >/dev/null 2>&1 &');
+
+	if (!length(errors))
+		mark_done();
+
+	out_json(length(errors) ? { ok: false, errors: errors } : { ok: true });
+}
+
+// --- main ---
+try {
+	const qs = parse_qs(getenv('QUERY_STRING') ?? '');
+	const op = qs.op ?? '';
+	if (op == 'state')
+		handle_state();
+	else if (op == 'page')
+		handle_page();
+	else if (op == 'apply' && getenv('REQUEST_METHOD') == 'POST') {
+		out_headers();
+		handle_apply();
+	} else {
+		out_headers();
+		out_json({ ok: false, error: 'bad request' });
+	}
+} catch (e) {
+	out_headers();
+	out_json({ ok: false, error: 'internal error: ' + e });
+}
