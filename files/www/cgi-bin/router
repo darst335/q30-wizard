@@ -1,0 +1,516 @@
+#!/usr/bin/ucode
+// Q30 Pro 家用管理界面后端 (ucode CGI)
+// 鉴权: rpcd session (cookie q30sysauth)
+// ops: login logout status wan_get wan_set wifi_get wifi_set lan_get lan_set
+//      adminpass reboot factory
+
+'use strict';
+
+import { readfile, writefile, open, popen } from 'fs';
+import { cursor } from 'uci';
+import { connect } from 'ubus';
+
+const COOKIE = 'q30sysauth';
+const ENC_OK = ['none', 'psk2', 'sae', 'sae-mixed'];
+
+// ---------- output ----------
+function out_headers(extra) {
+	printf('Content-Type: application/json; charset=utf-8\r\n');
+	printf('Cache-Control: no-store\r\n');
+	for (let h in (extra ?? []))
+		printf('%s\r\n', h);
+	printf('\r\n');
+}
+function out_json(v) { printf('%J', v); }
+function fail(err, code) {
+	out_json({ ok: false, error: err, code: code ?? 0 });
+}
+function deny() {
+	out_json({ ok: false, error: 'unauthorized', code: 401 });
+}
+
+// ---------- helpers ----------
+function sysval(path) {
+	let v = readfile(path);
+	if (v == null || v == '') {
+		const p = popen('cat ' + path + ' 2>/dev/null');
+		if (p != null)
+			v = p.read('all');
+	}
+	return (v != null) ? replace(v, /\s+$/, '') : '';
+}
+
+function urldecode(s) {
+	s = replace(s ?? '', /\+/g, ' ');
+	let out = '';
+	let i = 0;
+	const len = length(s);
+	while (i < len) {
+		if (substr(s, i, 1) == '%') {
+			const h = substr(s, i + 1, 2);
+			const c = hex(h);
+			out += (c != null) ? chr(c) : '';
+			i += 3;
+		} else {
+			out += substr(s, i, 1);
+			i += 1;
+		}
+	}
+	return out;
+}
+
+function parse_qs(s) {
+	const m = {};
+	for (let pair in split(s ?? '', '&')) {
+		if (!length(pair))
+			continue;
+		const idx = index(pair, '=');
+		if (idx == -1)
+			m[urldecode(pair)] = '';
+		else
+			m[urldecode(substr(pair, 0, idx))] = urldecode(substr(pair, idx + 1));
+	}
+	return m;
+}
+
+function read_body() {
+	const stdin = open('/dev/stdin', 'r');
+	return (stdin != null) ? parse_qs(stdin.read('all') ?? '') : {};
+}
+
+function is_ip(s) {
+	const m = match(s ?? '', /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+	if (m == null)
+		return false;
+	for (let i = 1; i <= 4; i++) {
+		const n = int(m[i]);
+		if (n == null || n < 0 || n > 255)
+			return false;
+	}
+	return true;
+}
+
+// ---------- auth ----------
+function conn() { return connect(); }
+
+function get_token() {
+	for (let kv in split(getenv('HTTP_COOKIE') ?? '', '; ')) {
+		const idx = index(kv, '=');
+		if (idx > 0 && substr(kv, 0, idx) == COOKIE)
+			return substr(kv, idx + 1);
+	}
+	return null;
+}
+
+function auth_ok() {
+	const tk = get_token();
+	if (tk == null)
+		return false;
+	const c = conn();
+	const r = c.call('session', 'get', { ubus_rpc_session: tk });
+	return (r != null && type(r) == 'array' ? r[0] : r) != null;
+}
+
+// ---------- status ----------
+function fmt_uptime(sec) {
+	const d = int(sec / 86400);
+	const h = int((sec % 86400) / 3600);
+	const m = int((sec % 3600) / 60);
+	return (d > 0 ? d + '天' : '') + h + '小时' + m + '分钟';
+}
+
+function wan_status() {
+	const c = conn();
+	let st = c.call('network.interface.wan', 'status', {});
+	if (st != null && type(st) == 'array')
+		st = st[0];
+	const uc = cursor();
+	const out = { proto: uc.get('network', 'wan', 'proto') ?? 'dhcp', up: false };
+	if (st != null) {
+		out.up = (st.up == true);
+		out.ipv4 = length(st['ipv4-address'] ?? []) ? st['ipv4-address'][0].address : '';
+		out.mask = length(st['ipv4-address'] ?? []) ? st['ipv4-address'][0].mask : '';
+		out.dns = [];
+		for (let d in (st['dns-server'] ?? []))
+			push(out.dns, d);
+		for (let r in (st.route ?? [])) {
+			if (r.target == '0.0.0.0')
+				out.gw = r.nexthop;
+		}
+	}
+	out.uptime = (st != null && st.uptime != null) ? st.uptime : 0;
+	return out;
+}
+
+function port_status() {
+	const out = [];
+	for (let p in ['lan1', 'lan2', 'lan3', 'wan']) {
+		const carrier = sysval('/sys/class/net/' + p + '/carrier');
+		const speed = sysval('/sys/class/net/' + p + '/speed');
+		push(out, { port: p, link: (carrier == '1'), speed: (speed == '-1' || speed == '') ? 0 : int(speed) });
+	}
+	return out;
+}
+
+function wifi_status() {
+	const c = cursor();
+	const ub = conn();
+	let wst = ub.call('network.wireless', 'status', {});
+	if (wst != null && type(wst) == 'array')
+		wst = wst[0];
+	const radios = [];
+	for (let rad in ['radio0', 'radio1']) {
+		const r = {
+			radio: rad,
+			band: (rad == 'radio0') ? '2.4G' : '5G',
+			up: false,
+			ifname: '',
+			channel: c.get('wireless', rad, 'channel') ?? 'auto',
+			disabled: (c.get('wireless', rad, 'disabled') == '1')
+		};
+		if (wst != null && wst[rad] != null) {
+			r.up = (wst[rad].up == true);
+			for (let itf in (wst[rad].interfaces ?? [])) {
+				r.ifname = itf.ifname ?? '';
+				if (r.ifname != '')
+					break;
+			}
+		}
+		if (r.ifname != '') {
+			let cl = ub.call('hostapd.' + r.ifname, 'get_clients', {});
+			if (cl != null && type(cl) == 'array')
+				cl = cl[0];
+			r.clients = (cl != null && cl.clients != null) ? length(keys(cl.clients)) : 0;
+		} else
+			r.clients = 0;
+		push(radios, r);
+	}
+	c.foreach('wireless', 'wifi-iface', function (s) {
+		for (let r in radios) {
+			if (s.device == r.radio) {
+				r.ssid = s.ssid ?? '';
+				r.encryption = s.encryption ?? 'none';
+				r.hidden = (s.hidden == '1');
+				r.has_key = (s.encryption != 'none');
+			}
+		}
+	});
+	return radios;
+}
+
+function client_list() {
+	const out = [];
+	const arp = readfile('/proc/net/arp') ?? '';
+	for (let line in split(readfile('/tmp/dhcp.leases') ?? '', '\n')) {
+		const f = split(replace(line, /\s+$/, ''), ' ');
+		if (length(f) < 4)
+			continue;
+		const cl = { mac: f[1], ip: f[2], name: (f[3] == '*') ? '未知设备' : f[3] };
+		for (let al in split(arp, '\n')) {
+			const af = split(al, /\s+/);
+			if (length(af) > 3 && af[0] == cl.ip && af[3] != '0x0')
+				cl.active = true;
+		}
+		cl.active = (cl.active == true);
+		push(out, cl);
+	}
+	return out;
+}
+
+function sys_status() {
+	let b = conn().call('system', 'board', {});
+	if (b != null && type(b) == 'array')
+		b = b[0];
+	let inf = conn().call('system', 'info', {});
+	if (inf != null && type(inf) == 'array')
+		inf = inf[0];
+	const meminfo = readfile('/proc/meminfo') ?? '';
+	const mt = match(meminfo, /MemTotal:\s+(\d+)/);
+	const ma = match(meminfo, /MemAvailable:\s+(\d+)/);
+	const la = split(readfile('/proc/loadavg') ?? ' 0 0 0', ' ');
+	const t = sysval('/sys/class/thermal/thermal_zone0/temp');
+	return {
+		model: replace(sysval('/tmp/sysinfo/model') || 'JCG Q30 PRO', /\s+$/, ''),
+		firmware: (b != null && b.release != null) ? b.release.description : '',
+		hostname: (b != null) ? (b.hostname ?? '') : '',
+		uptime: (inf != null && inf.uptime != null) ? inf.uptime : 0,
+		load: [la[0] ?? '0', la[1] ?? '0', la[2] ?? '0'],
+		mem_total: (mt != null) ? int(mt[1]) : 0,
+		mem_free: (ma != null) ? int(ma[1]) : 0,
+		temp: (t != '' && int(t) > 1000) ? int(t) / 1000 : 0
+	};
+}
+
+function handle_status() {
+	out_json({
+		ok: true,
+		sys: sys_status(),
+		wan: wan_status(),
+		ports: port_status(),
+		wifi: wifi_status(),
+		clients: client_list(),
+		uptime_str: fmt_uptime(sys_status().uptime)
+	});
+}
+
+// ---------- WAN ----------
+function handle_wan_get() {
+	const c = cursor();
+	const v = c.get('network', 'wan', 'proto') ?? 'dhcp';
+	const out = { ok: true, proto: v, pppoeuser: c.get('network', 'wan', 'username') ?? '' };
+	if (v == 'static') {
+		out.ip = c.get('network', 'wan', 'ipaddr') ?? '';
+		out.mask = c.get('network', 'wan', 'netmask') ?? '255.255.255.0';
+		out.gw = c.get('network', 'wan', 'gateway') ?? '';
+		const dns = c.get('network', 'wan', 'dns') ?? [];
+		out.dns = join(' ', type(dns) == 'array' ? dns : [dns]);
+	}
+	out_json(out);
+}
+
+function apply_wan(c, v) {
+	if (v.proto == 'pppoe') {
+		c.set('network', 'wan', 'proto', 'pppoe');
+		c.set('network', 'wan', 'username', v.user);
+		c.set('network', 'wan', 'password', v.pass);
+		c.delete('network', 'wan', 'ipaddr');
+		c.delete('network', 'wan', 'netmask');
+		c.delete('network', 'wan', 'gateway');
+		c.delete('network', 'wan', 'dns');
+	} else if (v.proto == 'static') {
+		c.set('network', 'wan', 'proto', 'static');
+		c.set('network', 'wan', 'ipaddr', v.ip);
+		c.set('network', 'wan', 'netmask', v.mask);
+		c.set('network', 'wan', 'gateway', v.gw);
+		c.delete('network', 'wan', 'username');
+		c.delete('network', 'wan', 'password');
+		if (length(v.dns ?? '')) {
+			const ok = [];
+			for (let d in split(v.dns, /[ ]+/))
+				if (is_ip(d))
+					push(ok, d);
+			if (length(ok))
+				c.set('network', 'wan', 'dns', ok);
+		} else
+			c.delete('network', 'wan', 'dns');
+	} else {
+		c.set('network', 'wan', 'proto', 'dhcp');
+		c.delete('network', 'wan', 'ipaddr');
+		c.delete('network', 'wan', 'netmask');
+		c.delete('network', 'wan', 'gateway');
+		c.delete('network', 'wan', 'username');
+		c.delete('network', 'wan', 'password');
+		c.delete('network', 'wan', 'dns');
+	}
+}
+
+function handle_wan_set(v) {
+	if (v.proto != 'dhcp' && v.proto != 'pppoe' && v.proto != 'static')
+		return fail('未知的上网方式');
+	if (v.proto == 'pppoe' && (!length(v.user ?? '') || !length(v.pass ?? '')))
+		return fail('宽带账号或密码为空');
+	if (v.proto == 'static' && (!is_ip(v.ip) || !is_ip(v.mask) || !is_ip(v.gw)))
+		return fail('静态 IP 参数格式错误');
+	const c = cursor();
+	apply_wan(c, v);
+	c.save('network');
+	c.commit('network');
+	system('(sleep 1; /etc/init.d/network restart) >/dev/null 2>&1 &');
+	out_json({ ok: true, msg: '设置已保存，网络正在切换，请稍候…' });
+}
+
+// ---------- WiFi ----------
+function band_cfg(v, band) {
+	return {
+		en: v['en' + band],
+		ssid: v['ssid' + band],
+		key: v['key' + band],
+		enc: v['enc' + band],
+		hid: v['hid' + band]
+	};
+}
+
+function handle_wifi_get() {
+	const c = cursor();
+	const out = { ok: true, bands: {} };
+	for (let b in ['0', '1']) {
+		const rad = (b == '0') ? 'radio0' : 'radio1';
+		out.bands[b] = {
+			disabled: (c.get('wireless', rad, 'disabled') == '1'),
+			channel: c.get('wireless', rad, 'channel') ?? 'auto'
+		};
+	}
+	c.foreach('wireless', 'wifi-iface', function (s) {
+		let b = (s.device == 'radio0') ? '0' : (s.device == 'radio1') ? '1' : null;
+		if (b == null)
+			return;
+		out.bands[b].ssid = s.ssid ?? '';
+		out.bands[b].encryption = s.encryption ?? 'none';
+		out.bands[b].hidden = (s.hidden == '1');
+	});
+	out_json(out);
+}
+
+function handle_wifi_set(v) {
+	const plan = {};
+	for (let b in ['0', '1']) {
+		const p = band_cfg(v, b);
+		if (index(ENC_OK, p.enc ?? '') == -1)
+			return fail('不支持的加密方式');
+		if (!length(p.ssid ?? '') || length(p.ssid) > 32)
+			return fail('Wi-Fi 名称不合法（1-32 字符）');
+		if (p.enc != 'none' && (length(p.key ?? '') < 8 || length(p.key) > 63))
+			return fail('Wi-Fi 密码需要 8-63 位');
+		plan[(b == '0') ? 'radio0' : 'radio1'] = p;
+	}
+	const c = cursor();
+	for (let rad in ['radio0', 'radio1']) {
+		const p = plan[rad];
+		c.set('wireless', rad, 'disabled', (p.en == '1') ? '0' : '1');
+	}
+	c.foreach('wireless', 'wifi-iface', function (s) {
+		const p = plan[s.device];
+		if (p == null)
+			return;
+		c.set('wireless', s['.name'], 'ssid', p.ssid);
+		c.set('wireless', s['.name'], 'encryption', p.enc);
+		if (p.enc == 'none')
+			c.delete('wireless', s['.name'], 'key');
+		else
+			c.set('wireless', s['.name'], 'key', p.key);
+		if (p.hid == '1')
+			c.set('wireless', s['.name'], 'hidden', '1');
+		else
+			c.delete('wireless', s['.name'], 'hidden');
+	});
+	c.save('wireless');
+	c.commit('wireless');
+	system('(sleep 1; /sbin/wifi reload) >/dev/null 2>&1 &');
+	out_json({ ok: true, msg: 'Wi-Fi 设置已保存，正在应用…' });
+}
+
+// ---------- LAN ----------
+function handle_lan_get() {
+	const c = cursor();
+	const ignore = c.get('dhcp', 'lan', 'ignore');
+	out_json({
+		ok: true,
+		ip: c.get('network', 'lan', 'ipaddr') ?? '192.168.1.1',
+		mask: c.get('network', 'lan', 'netmask') ?? '255.255.255.0',
+		dhcp_on: (ignore != '1'),
+		start: c.get('dhcp', 'lan', 'start') ?? '100',
+		limit: c.get('dhcp', 'lan', 'limit') ?? '150'
+	});
+}
+
+function handle_lan_set(v) {
+	if (!is_ip(v.ip))
+		return fail('路由器 IP 格式错误');
+	const n = int(v.limit ?? '150');
+	const st = int(v.start ?? '100');
+	if (n == null || n < 1 || n > 250 || st == null || st < 2 || st > 254)
+		return fail('DHCP 地址池参数不合法');
+	const c = cursor();
+	c.set('network', 'lan', 'ipaddr', v.ip);
+	if (v.dhcp_on == '1') {
+		c.delete('dhcp', 'lan', 'ignore');
+		c.set('dhcp', 'lan', 'start', st);
+		c.set('dhcp', 'lan', 'limit', n);
+	} else
+		c.set('dhcp', 'lan', 'ignore', '1');
+	c.save('network');
+	c.commit('network');
+	c.save('dhcp');
+	c.commit('dhcp');
+	const changed = (v.ip != (cursor().get('network', 'lan', 'ipaddr')));
+	system('(sleep 1; /etc/init.d/network restart; /etc/init.d/dnsmasq restart) >/dev/null 2>&1 &');
+	out_json({ ok: true, msg: '设置已保存。若修改了路由器 IP，请稍后用新 IP ' + v.ip + ' 重新访问管理页面。' });
+}
+
+// ---------- system ----------
+function handle_adminpass(v) {
+	if (length(v.pass ?? '') < 8)
+		return fail('管理密码至少 8 位');
+	const p = popen('chpasswd 2>/dev/null', 'w');
+	if (p == null)
+		return fail('无法执行密码修改');
+	p.write('root:' + v.pass + '\n');
+	p.close();
+	out_json({ ok: true, msg: '管理密码已修改，下次登录使用新密码。' });
+}
+
+// ---------- main ----------
+try {
+	const qs = parse_qs(getenv('QUERY_STRING') ?? '');
+	const op = qs.op ?? '';
+	const post = (getenv('REQUEST_METHOD') == 'POST');
+
+	if (op == 'login' && post) {
+		const v = read_body();
+		const c = conn();
+		const r = c.call('session', 'login', { username: 'root', password: v.password ?? '', timeout: 28800 });
+		printf('Content-Type: application/json; charset=utf-8\r\n');
+		printf('Cache-Control: no-store\r\n');
+		if (r == null) {
+			printf('\r\n');
+			out_json({ ok: false, error: '管理密码错误' });
+		} else {
+			const rr = (type(r) == 'array') ? r[0] : r;
+			printf('Set-Cookie: %s=%s; Path=/; HttpOnly\r\n', COOKIE, rr.ubus_rpc_session);
+			printf('\r\n');
+			out_json({ ok: true });
+		}
+	} else if (op == 'logout' && post) {
+		const tk = get_token();
+		if (tk != null)
+			conn().call('session', 'destroy', { ubus_rpc_session: tk });
+		printf('Content-Type: application/json; charset=utf-8\r\n');
+		printf('Cache-Control: no-store\r\n');
+		printf('Set-Cookie: %s=; Path=/; Max-Age=0\r\n', COOKIE);
+		printf('\r\n');
+		out_json({ ok: true });
+	} else {
+		out_headers();
+		if (op == 'status') {
+			if (!auth_ok()) { deny(); }
+			else handle_status();
+		} else if (op == 'wan_get') {
+			if (!auth_ok()) { deny(); }
+			else handle_wan_get();
+		} else if (op == 'wan_set' && post) {
+			if (!auth_ok()) { deny(); }
+			else handle_wan_set(read_body());
+		} else if (op == 'wifi_get') {
+			if (!auth_ok()) { deny(); }
+			else handle_wifi_get();
+		} else if (op == 'wifi_set' && post) {
+			if (!auth_ok()) { deny(); }
+			else handle_wifi_set(read_body());
+		} else if (op == 'lan_get') {
+			if (!auth_ok()) { deny(); }
+			else handle_lan_get();
+		} else if (op == 'lan_set' && post) {
+			if (!auth_ok()) { deny(); }
+			else handle_lan_set(read_body());
+		} else if (op == 'adminpass' && post) {
+			if (!auth_ok()) { deny(); }
+			else handle_adminpass(read_body());
+		} else if (op == 'reboot' && post) {
+			if (!auth_ok()) { deny(); }
+			else {
+				system('(sleep 1; reboot) >/dev/null 2>&1 &');
+				out_json({ ok: true, msg: '路由器正在重启，约 1 分钟后恢复。' });
+			}
+		} else if (op == 'factory' && post) {
+			if (!auth_ok()) { deny(); }
+			else {
+				system('(sleep 1; firstboot -y && reboot) >/dev/null 2>&1 &');
+				out_json({ ok: true, msg: '正在恢复出厂设置并重启，重启完成后会自动进入快速设置向导。' });
+			}
+		} else {
+			fail('bad request');
+		}
+	}
+} catch (e) {
+	fail('internal error: ' + e);
+}
