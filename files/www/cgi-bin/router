@@ -1,7 +1,7 @@
 #!/usr/bin/ucode
 // Q30 Pro 家用管理界面后端 (ucode CGI)
 // 鉴权: rpcd session (cookie q30sysauth)
-// ops: login logout status wan_get wan_set wifi_get wifi_set lan_get lan_set
+// ops: login logout status wan_get wan_set wifi_get wifi_set mesh_get mesh_set lan_get lan_set
 //      adminpass reboot factory
 
 'use strict';
@@ -389,6 +389,60 @@ function handle_wifi_set(v) {
 	out_json({ ok: true, msg: 'Wi-Fi 设置已保存，正在应用…' });
 }
 
+// ---------- Mesh (802.11s) ----------
+function handle_mesh_get() {
+	const c = cursor();
+	const out = { ok: true, enabled: false, mesh_id: '', has: false };
+	c.foreach('wireless', 'wifi-iface', function (s) {
+		if (s.mode != 'mesh')
+			return;
+		out.has = true;
+		out.mesh_id = s.mesh_id ?? out.mesh_id;
+		if (s.disabled != '1')
+			out.enabled = true;
+	});
+	out_json(out);
+}
+
+function handle_mesh_set(v) {
+	const en = (v.enabled == '1');
+	const mid = (v.mesh_id ?? '') + '';
+	const key = (v.key ?? '') + '';
+	if (en) {
+		if (!length(mid) || length(mid) > 32)
+			return fail('Mesh 名称需要 1-32 字符');
+		if (length(key) < 8 || length(key) > 63)
+			return fail('Mesh 密码需要 8-63 位');
+	}
+	const c = cursor();
+	const exist = {};
+	c.foreach('wireless', 'wifi-iface', function (s) {
+		if (s.mode == 'mesh' && exist[s.device] == null)
+			exist[s.device] = s['.name'];
+	});
+	for (let rad in ['radio0', 'radio1']) {
+		let name = exist[rad];
+		if (name == null) {
+			name = (rad == 'radio0') ? 'mesh0' : 'mesh1';
+			c.set('wireless', name, 'wifi-iface');
+			c.set('wireless', name, 'device', rad);
+			c.set('wireless', name, 'mode', 'mesh');
+			c.set('wireless', name, 'network', 'lan');
+		}
+		if (en || length(mid))
+			c.set('wireless', name, 'mesh_id', mid);
+		if (en || length(key)) {
+			c.set('wireless', name, 'encryption', 'sae');
+			c.set('wireless', name, 'key', key);
+		}
+		c.set('wireless', name, 'disabled', en ? '0' : '1');
+	}
+	c.save('wireless');
+	c.commit('wireless');
+	system('(sleep 1; /sbin/wifi reload) >/dev/null 2>&1 &');
+	out_json({ ok: true, msg: en ? 'Mesh 已开启，正在应用，无线会短暂重启…' : 'Mesh 已关闭，正在应用…' });
+}
+
 // ---------- LAN ----------
 function handle_lan_get() {
 	const c = cursor();
@@ -486,6 +540,12 @@ try {
 		} else if (op == 'wifi_set' && post) {
 			if (!auth_ok()) { deny(); }
 			else handle_wifi_set(read_body());
+		} else if (op == 'mesh_get') {
+			if (!auth_ok()) { deny(); }
+			else handle_mesh_get();
+		} else if (op == 'mesh_set' && post) {
+			if (!auth_ok()) { deny(); }
+			else handle_mesh_set(read_body());
 		} else if (op == 'lan_get') {
 			if (!auth_ok()) { deny(); }
 			else handle_lan_get();
