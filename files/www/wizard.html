@@ -49,8 +49,8 @@ input:focus,select:focus { border-color:var(--pri); }
   <div id="form">
     <div class="card">
       <h2><span class="step">1</span>设置路由器管理密码</h2>
-      <label for="ap">管理密码（至少 5 位，可留空使用无密码）</label>
-      <input type="password" id="ap" autocomplete="new-password" placeholder="留空 = 不设置密码">
+      <label for="ap">管理密码（至少 5 位，留空 = 使用默认密码 admin）</label>
+      <input type="password" id="ap" autocomplete="new-password" placeholder="留空 = 默认密码 admin">
       <label for="ap2">确认密码</label>
       <input type="password" id="ap2" autocomplete="new-password" placeholder="再次输入相同密码">
     </div>
@@ -84,11 +84,11 @@ input:focus,select:focus { border-color:var(--pri); }
     <div class="card">
       <h2><span class="step">3</span>设置 Wi-Fi 名称和密码</h2>
       <label for="ssid">Wi-Fi 名称（2.4G）</label>
-      <input type="text" id="ssid" maxlength="32" placeholder="例如 MyHome-WiFi">
-      <div class="check-row"><input type="checkbox" id="same5g" checked><label for="same5g" style="margin:0">5G 使用相同的名称和密码（推荐）</label></div>
-      <div id="sec5g" class="hidden">
+      <input type="text" id="ssid" maxlength="32" placeholder="例如 Jcq-ABCD">
+      <div class="check-row"><input type="checkbox" id="same5g"><label for="same5g" style="margin:0">5G 使用相同的名称和密码</label></div>
+      <div id="sec5g">
         <label for="ssid5">Wi-Fi 名称（5G）</label>
-        <input type="text" id="ssid5" maxlength="32" placeholder="例如 MyHome-WiFi-5G">
+        <input type="text" id="ssid5" maxlength="32" placeholder="例如 Jcq-ABCD-5G">
       </div>
       <label for="enc">加密方式</label>
       <select id="enc">
@@ -98,8 +98,8 @@ input:focus,select:focus { border-color:var(--pri); }
         <option value="none">不加密（开放网络）</option>
       </select>
       <div id="secKey">
-        <label for="key">Wi-Fi 密码（8–63 位）</label>
-        <input type="password" id="key" autocomplete="new-password" placeholder="手机连接 Wi-Fi 时输入的密码">
+      <label for="key">Wi-Fi 密码（8–63 位）</label>
+      <input type="password" id="key" autocomplete="new-password" placeholder="手机连接 Wi-Fi 时输入的密码" value="12345678">
       </div>
     </div>
 
@@ -138,6 +138,16 @@ $('enc').addEventListener('change', function () {
   $('secKey').classList.toggle('hidden', $('enc').value === 'none');
 });
 syncProto();
+
+// 预填默认 Wi-Fi：2.4G = Jcq-MAC后四位，5G = Jcq-MAC后四位-5G（由后台按本机 MAC 计算）
+fetch('cgi-bin/wizard?op=state')
+  .then(function (r) { return r.json(); })
+  .then(function (s) {
+    if (s && s.defssid && !$('ssid').value) $('ssid').value = s.defssid;
+    if (s && s.defssid5 && !$('ssid5').value) $('ssid5').value = s.defssid5;
+    if (s && s.defkey && !$('key').value) $('key').value = s.defkey;
+  })
+  .catch(function () {});
 
 function isIp(s) { return /^\d{1,3}(\.\d{1,3}){3}$/.test(s) && s.split('.').every(function (x) { return +x >= 0 && +x <= 255; }); }
 
@@ -197,8 +207,17 @@ function submit() {
         var html = '路由器正在应用新配置，约 20–40 秒后生效。<br><br>';
         html += '<b>新的 Wi-Fi：</b> ' + body.ssid + (body.ssid5 && body.ssid5 !== body.ssid ? ' / ' + body.ssid5 : '') + '<br>';
         if (body.key) html += '<b>Wi-Fi 密码：</b> ' + body.key.replace(/./g, '•').slice(0, 12) + '<br><br>';
-        html += '请用新 Wi-Fi 密码重新连接网络，然后访问 <b>192.168.1.1</b> 进入管理界面。';
+        html += '请用新 Wi-Fi 密码重新连接网络，然后访问 <b>192.168.1.1</b> 进入管理界面。<br><br>';
+        html += '<a class="btn" style="display:block;text-decoration:none;color:#fff" href="/">进入管理首页（<span id="cd">10</span> 秒后自动跳转）</a>';
         $('resBody').innerHTML = html;
+        // 10 秒后自动跳转首页
+        var n = 10;
+        window.__cdTimer = setInterval(function () {
+          n--;
+          var el = $('cd');
+          if (el) el.textContent = n;
+          if (n <= 0) { clearInterval(window.__cdTimer); location.href = '/'; }
+        }, 1000);
       } else {
         btn.disabled = false; btn.textContent = '完成设置';
         err([(res && res.error) || '应用失败，请重试'].concat(res && res.errors || []));
