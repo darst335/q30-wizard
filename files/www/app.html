@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q30 Pro 路由器管理</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif; background:#eef1f6; color:#1f2a3d; font-size:14px; }
+a { color:#2f6fd6; text-decoration:none; }
+button { font-family:inherit; cursor:pointer; }
+input,select { font-family:inherit; }
+
+/* ---------- login ---------- */
+#login-wrap { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+  background:linear-gradient(135deg,#12224e 0%,#1d3a75 55%,#2b57a8 100%); z-index:50; }
+#login-card { width:380px; background:#fff; border-radius:16px; padding:40px 36px; box-shadow:0 20px 60px rgba(4,12,40,.45); }
+#login-card .logo { text-align:center; margin-bottom:6px; }
+#login-card .logo .ic { display:inline-block; width:52px; height:52px; border-radius:14px; background:linear-gradient(135deg,#2f6fd6,#1d4fa0);
+  position:relative; margin-bottom:14px; }
+#login-card .logo .ic::after { content:""; position:absolute; inset:16px 11px; border:3px solid #fff; border-radius:26px 26px 4px 4px; }
+#login-card h1 { font-size:20px; color:#16244a; text-align:center; }
+#login-card .sub { text-align:center; color:#8a94a8; font-size:12px; margin:6px 0 26px; }
+#login-card input { width:100%; height:44px; border:1px solid #d4dae5; border-radius:8px; padding:0 14px; font-size:14px; outline:none; }
+#login-card input:focus { border-color:#2f6fd6; box-shadow:0 0 0 3px rgba(47,111,214,.15); }
+#login-btn { width:100%; height:44px; margin-top:18px; background:linear-gradient(135deg,#2f6fd6,#245bb5); color:#fff;
+  border:none; border-radius:8px; font-size:15px; }
+#login-btn:active { transform:translateY(1px); }
+#login-err { color:#d64545; font-size:13px; text-align:center; min-height:18px; margin-top:12px; }
+#login-card .tip { margin-top:14px; font-size:12px; color:#98a1b3; text-align:center; line-height:1.7; }
+
+/* ---------- frame ---------- */
+#app { display:none; }
+#app.on { display:block; }
+#topbar { height:56px; background:#101c3f; color:#fff; display:flex; align-items:center; padding:0 22px; position:sticky; top:0; z-index:10; }
+#topbar .brand { display:flex; align-items:center; gap:10px; font-size:17px; font-weight:600; letter-spacing:.5px; }
+#topbar .brand .ic { width:28px; height:28px; border-radius:8px; background:linear-gradient(135deg,#3d7de0,#2a5cb8); position:relative; }
+#topbar .brand .ic::after { content:""; position:absolute; inset:8px 6px; border:2px solid #fff; border-radius:14px 14px 2px 2px; }
+#topbar .right { margin-left:auto; display:flex; align-items:center; gap:16px; font-size:13px; color:#b8c4dd; }
+#topbar .right .lucibtn { border:1px solid #3a4a78; color:#b8c4dd; background:none; border-radius:6px; padding:5px 10px; font-size:12px; }
+#topbar .right .lucibtn:hover { border-color:#5d78b8; color:#fff; }
+#topbar .right .out { color:#ff9c9c; background:none; border:none; font-size:13px; }
+#layout { display:flex; min-height:calc(100vh - 56px); }
+#sidebar { width:200px; background:#16244a; padding:14px 0; flex-shrink:0; }
+#sidebar .nav { display:flex; align-items:center; gap:11px; padding:13px 22px; color:#a9b6d4; cursor:pointer; font-size:14px; border-left:3px solid transparent; }
+#sidebar .nav:hover { color:#fff; background:rgba(255,255,255,.05); }
+#sidebar .nav.on { color:#fff; background:rgba(47,111,214,.28); border-left-color:#4d8bef; font-weight:600; }
+#sidebar .nav .ico { width:18px; text-align:center; font-style:normal; }
+#sidebar .sep { margin:12px 18px; border-top:1px solid rgba(255,255,255,.09); }
+#main { flex:1; padding:24px 28px 60px; min-width:0; }
+.page { display:none; }
+.page.on { display:block; }
+h2.pg { font-size:19px; margin-bottom:18px; color:#16244a; }
+
+/* ---------- cards ---------- */
+.card { background:#fff; border-radius:12px; box-shadow:0 1px 4px rgba(23,37,74,.08); padding:20px 22px; margin-bottom:18px; }
+.card h3 { font-size:15px; color:#16244a; margin-bottom:14px; padding-left:9px; border-left:4px solid #2f6fd6; line-height:1.2; }
+.banner { border-radius:12px; padding:18px 22px; margin-bottom:18px; color:#fff; display:flex; align-items:center; gap:14px;
+  background:linear-gradient(120deg,#2e9e5b,#27894e); }
+.banner.bad { background:linear-gradient(120deg,#d9534f,#c43c38); }
+.banner .dot { width:12px; height:12px; border-radius:50%; background:#fff; box-shadow:0 0 0 4px rgba(255,255,255,.25); }
+.banner .t { font-size:17px; font-weight:600; }
+.banner .d { font-size:12px; opacity:.9; margin-top:2px; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+.kv { display:flex; justify-content:space-between; padding:7px 0; font-size:13px; border-bottom:1px dashed #edf0f5; }
+.kv:last-child { border-bottom:none; }
+.kv .k { color:#7d879c; }
+.kv .v { color:#1f2a3d; font-weight:500; text-align:right; word-break:break-all; }
+.membar { height:8px; background:#e8ecf3; border-radius:4px; margin-top:6px; overflow:hidden; }
+.membar i { display:block; height:100%; background:linear-gradient(90deg,#2f6fd6,#4d8bef); border-radius:4px; }
+
+.ports { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+.port { background:#f6f8fb; border:1px solid #e3e8f0; border-radius:10px; padding:12px 10px; text-align:center; }
+.port .nm { font-size:12px; color:#7d879c; margin-bottom:8px; }
+.port .st { width:34px; height:34px; margin:0 auto 8px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:15px; }
+.port.up .st { background:#e2f5e9; color:#27894e; }
+.port.down .st { background:#eef0f4; color:#b3bccb; }
+.port .sp { font-size:12px; font-weight:600; color:#3d4burlywood; }
+.port .sp { color:#3d4a66; }
+
+.wifi-cards { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.wifi-box { background:#f6f8fb; border:1px solid #e3e8f0; border-radius:10px; padding:14px 16px; }
+.wifi-box .hd { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.wifi-box .band { font-size:13px; font-weight:600; color:#2f6fd6; background:#e8f0fc; border-radius:5px; padding:2px 8px; }
+.wifi-box .ssid { font-size:15px; font-weight:600; color:#16244a; }
+.wifi-box .meta { font-size:12px; color:#7d879c; margin-top:6px; line-height:1.8; }
+
+table.clients { width:100%; border-collapse:collapse; font-size:13px; }
+table.clients th { text-align:left; color:#7d879c; font-weight:500; padding:8px 10px; border-bottom:1px solid #e8ecf3; }
+table.clients td { padding:9px 10px; border-bottom:1px solid #f2f4f8; }
+table.clients .st { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+table.clients .st.on { background:#2eaa5e; }
+table.clients .st.off { background:#c3cad6; }
+
+/* ---------- forms ---------- */
+.field { margin-bottom:16px; }
+.field label { display:block; font-size:13px; color:#5c6780; margin-bottom:6px; }
+.field input[type=text],.field input[type=password],.field select { width:100%; max-width:420px; height:40px; border:1px solid #d4dae5;
+  border-radius:8px; padding:0 12px; font-size:14px; outline:none; background:#fff; }
+.field input:focus,.field select:focus { border-color:#2f6fd6; box-shadow:0 0 0 3px rgba(47,111,214,.12); }
+.radio-row { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+.radio-card { border:1.5px solid #d4dae5; border-radius:10px; padding:12px 18px; cursor:pointer; background:#fff; font-size:14px; }
+.radio-card input { margin-right:8px; accent-color:#2f6fd6; }
+.radio-card.on { border-color:#2f6fd6; background:#f0f6ff; color:#1d4fa0; font-weight:600; }
+.btn { height:40px; padding:0 26px; border:none; border-radius:8px; font-size:14px; background:linear-gradient(135deg,#2f6fd6,#245bb5); color:#fff; }
+.btn.gray { background:#e8ecf3; color:#3d4a66; }
+.btn.red { background:linear-gradient(135deg,#d9534f,#c43c38); }
+.btn.sm { height:32px; padding:0 14px; font-size:13px; border-radius:6px; }
+.msg { display:none; margin-top:14px; padding:10px 14px; border-radius:8px; font-size:13px; max-width:520px; }
+.msg.ok { display:block; background:#e5f5ec; color:#20764a; border:1px solid #bfe6cf; }
+.msg.err { display:block; background:#fdecec; color:#b83232; border:1px solid #f3c6c6; }
+.hint { font-size:12px; color:#98a1b3; margin-top:6px; line-height:1.7; }
+.warnbox { background:#fff7e8; border:1px solid #f5dfae; color:#8a6d1f; border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:16px; }
+
+.switch { position:relative; display:inline-block; width:44px; height:24px; vertical-align:middle; }
+.switch input { opacity:0; width:0; height:0; }
+.switch i { position:absolute; inset:0; background:#c9d1de; border-radius:12px; transition:.2s; cursor:pointer; }
+.switch i::before { content:""; position:absolute; width:18px; height:18px; border-radius:50%; background:#fff; top:3px; left:3px; transition:.2s; box-shadow:0 1px 3px rgba(0,0,0,.25); }
+.switch input:checked + i { background:#2e9e5b; }
+.switch input:checked + i::before { left:23px; }
+
+#toast { position:fixed; top:70px; left:50%; transform:translateX(-50%); background:#2b3550; color:#fff; padding:10px 22px;
+  border-radius:8px; font-size:14px; display:none; z-index:99; box-shadow:0 6px 24px rgba(0,0,0,.3); }
+#reboot-mask { position:fixed; inset:0; background:rgba(10,16,35,.6); display:none; align-items:center; justify-content:center; z-index:60; }
+#reboot-mask .box { background:#fff; border-radius:14px; padding:34px 40px; text-align:center; width:360px; }
+.spin { width:34px; height:34px; border:4px solid #dfe5ef; border-top-color:#2f6fd6; border-radius:50%; margin:0 auto 16px; animation:sp 1s linear infinite; }
+@keyframes sp { to { transform:rotate(360deg); } }
+@media (max-width:860px){ .grid2{grid-template-columns:1fr} #sidebar{width:170px} .ports{grid-template-columns:repeat(2,1fr)} }
+</style>
+</head>
+<body>
+
+<div id="login-wrap">
+  <div id="login-card">
+    <div class="logo"><span class="ic"></span></div>
+    <h1>Q30 Pro 智能路由器</h1>
+    <div class="sub">请输入管理密码登录</div>
+    <input type="password" id="login-pass" placeholder="管理密码" autocomplete="current-password">
+    <div id="login-err"></div>
+    <button id="login-btn">登 录</button>
+    <div class="tip">首次使用？连接网络后打开本页面会自动进入快速设置向导</div>
+  </div>
+</div>
+
+<div id="app">
+  <div id="topbar">
+    <div class="brand"><span class="ic"></span><span id="tb-name">Q30 Pro</span></div>
+    <div class="right">
+      <button class="lucibtn" onclick="window.open('/cgi-bin/luci/','_blank')">专家模式 (LuCI)</button>
+      <button class="out" id="logout-btn">退出登录</button>
+    </div>
+  </div>
+  <div id="layout">
+    <div id="sidebar">
+      <div class="nav on" data-p="overview"><i class="ico">⌂</i>总览</div>
+      <div class="nav" data-p="wan"><i class="ico">🌐</i>上网设置</div>
+      <div class="nav" data-p="wifi"><i class="ico">📶</i>Wi-Fi 设置</div>
+      <div class="nav" data-p="lan"><i class="ico">☷</i>局域网设置</div>
+      <div class="sep"></div>
+      <div class="nav" data-p="system"><i class="ico">⚙</i>系统管理</div>
+      <div class="nav" data-p="wizard"><i class="ico">✨</i>快速设置向导</div>
+    </div>
+    <div id="main">
+
+      <!-- 总览 -->
+      <div class="page on" id="pg-overview">
+        <div class="banner" id="net-banner">
+          <div class="dot"></div>
+          <div><div class="t" id="nb-title">正在获取状态…</div><div class="d" id="nb-desc"></div></div>
+        </div>
+        <div class="grid2">
+          <div class="card">
+            <h3>系统信息</h3>
+            <div class="kv"><span class="k">设备型号</span><span class="v" id="s-model">-</span></div>
+            <div class="kv"><span class="k">固件版本</span><span class="v" id="s-fw">-</span></div>
+            <div class="kv"><span class="k">运行时间</span><span class="v" id="s-up">-</span></div>
+            <div class="kv"><span class="k">CPU 温度</span><span class="v" id="s-temp">-</span></div>
+            <div class="kv"><span class="k">负载</span><span class="v" id="s-load">-</span></div>
+            <div class="kv"><span class="k">内存</span><span class="v" id="s-mem">-</span></div>
+            <div class="membar"><i id="s-membar" style="width:0"></i></div>
+          </div>
+          <div class="card">
+            <h3>网口状态</h3>
+            <div class="ports" id="ports"></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Wi-Fi</h3>
+          <div class="wifi-cards" id="wifi-cards"></div>
+        </div>
+        <div class="card">
+          <h3>连接的终端设备 <span id="cl-cnt" style="color:#98a1b3;font-weight:400;font-size:13px"></span></h3>
+          <table class="clients">
+            <thead><tr><th>状态</th><th>设备名</th><th>IP 地址</th><th>MAC 地址</th></tr></thead>
+            <tbody id="cl-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 上网设置 -->
+      <div class="page" id="pg-wan">
+        <h2 class="pg">上网设置</h2>
+        <div class="card">
+          <h3>连接方式</h3>
+          <div class="radio-row" id="wan-radios">
+            <label class="radio-card on"><input type="radio" name="wanp" value="dhcp" checked>自动获得 IP（推荐）</label>
+            <label class="radio-card"><input type="radio" name="wanp" value="pppoe">宽带拨号上网（PPPoE）</label>
+            <label class="radio-card"><input type="radio" name="wanp" value="static">手动输入 IP（静态）</label>
+          </div>
+          <div id="wan-dhcp" class="hint" style="margin-bottom:14px">光猫/上级路由会自动分配网络参数，无需填写。适用于大多数家庭宽带。</div>
+          <div id="wan-pppoe" style="display:none">
+            <div class="field"><label>宽带账号（运营商提供）</label><input type="text" id="wan-user"></div>
+            <div class="field"><label>宽带密码</label><input type="password" id="wan-pass"></div>
+            <div class="hint">即办理宽带时运营商提供的拨号账号和密码。</div>
+          </div>
+          <div id="wan-static" style="display:none">
+            <div class="field"><label>IP 地址</label><input type="text" id="wan-ip" placeholder="例：192.168.10.10"></div>
+            <div class="field"><label>子网掩码</label><input type="text" id="wan-mask" placeholder="255.255.255.0"></div>
+            <div class="field"><label>网关</label><input type="text" id="wan-gw" placeholder="例：192.168.10.1"></div>
+            <div class="field"><label>DNS 服务器（可留空）</label><input type="text" id="wan-dns" placeholder="223.5.5.5 114.114.114.114"></div>
+          </div>
+          <div class="msg" id="wan-msg"></div>
+          <button class="btn" id="wan-save">保存并应用</button>
+          <div class="hint">保存后网络会短暂中断约 10 秒。</div>
+        </div>
+      </div>
+
+      <!-- Wi-Fi 设置 -->
+      <div class="page" id="pg-wifi">
+        <h2 class="pg">Wi-Fi 设置</h2>
+        <div class="card" id="wf-0-card">
+          <h3>2.4G Wi-Fi <span style="float:right"><label class="switch"><input type="checkbox" id="wf-en0" checked><i></i></label></span></h3>
+          <div class="field"><label>Wi-Fi 名称</label><input type="text" id="wf-ssid0" maxlength="32"></div>
+          <div class="field"><label>Wi-Fi 密码（8-63 位）</label><input type="password" id="wf-key0" maxlength="63"></div>
+          <div class="field"><label>加密方式</label>
+            <select id="wf-enc0">
+              <option value="sae-mixed">WPA2/WPA3 混合（推荐）</option>
+              <option value="psk2">WPA2（兼容旧设备）</option>
+              <option value="sae">WPA3（仅新设备）</option>
+              <option value="none">开放（不加密，不推荐）</option>
+            </select></div>
+          <div class="field"><label>隐藏网络 <input type="checkbox" id="wf-hid0" style="accent-color:#2f6fd6"></label></div>
+        </div>
+        <div class="card" id="wf-1-card">
+          <h3>5G Wi-Fi <span style="float:right"><label class="switch"><input type="checkbox" id="wf-en1" checked><i></i></label></span></h3>
+          <div class="field"><label>Wi-Fi 名称</label><input type="text" id="wf-ssid1" maxlength="32"></div>
+          <div class="field"><label>Wi-Fi 密码（8-63 位）</label><input type="password" id="wf-key1" maxlength="63"></div>
+          <div class="field"><label>加密方式</label>
+            <select id="wf-enc1">
+              <option value="sae-mixed">WPA2/WPA3 混合（推荐）</option>
+              <option value="psk2">WPA2（兼容旧设备）</option>
+              <option value="sae">WPA3（仅新设备）</option>
+              <option value="none">开放（不加密，不推荐）</option>
+            </select></div>
+          <div class="field"><label>隐藏网络 <input type="checkbox" id="wf-hid1" style="accent-color:#2f6fd6"></label></div>
+        </div>
+        <div class="msg" id="wifi-msg"></div>
+        <button class="btn" id="wifi-save">保存并应用</button>
+        <div class="hint">保存后 Wi-Fi 会重启，所有设备需要重新连接。修改密码后请用新密码重连。</div>
+      </div>
+
+      <!-- 局域网设置 -->
+      <div class="page" id="pg-lan">
+        <h2 class="pg">局域网设置</h2>
+        <div class="card">
+          <h3>路由器 LAN 设置</h3>
+          <div class="warnbox">修改路由器 IP 后，需要用新 IP 重新打开管理页面（例：http://192.168.2.1）。</div>
+          <div class="field"><label>路由器 IP 地址</label><input type="text" id="lan-ip"></div>
+          <div class="field" style="margin-top:18px"><label>DHCP 服务器（自动分配 IP 给终端）
+            <span style="float:right"><label class="switch"><input type="checkbox" id="lan-dhcp" checked><i></i></label></span></label></div>
+          <div id="lan-dhcp-opts">
+            <div class="field"><label>地址池起始</label><input type="text" id="lan-start"></div>
+            <div class="field"><label>地址池数量</label><input type="text" id="lan-limit"></div>
+          </div>
+          <div class="msg" id="lan-msg"></div>
+          <button class="btn" id="lan-save">保存并应用</button>
+        </div>
+      </div>
+
+      <!-- 系统管理 -->
+      <div class="page" id="pg-system">
+        <h2 class="pg">系统管理</h2>
+        <div class="card">
+          <h3>修改管理密码</h3>
+          <div class="field"><label>新密码（至少 8 位）</label><input type="password" id="ap-pass"></div>
+          <div class="field"><label>确认新密码</label><input type="password" id="ap-pass2"></div>
+          <div class="msg" id="ap-msg"></div>
+          <button class="btn" id="ap-save">确认修改</button>
+        </div>
+        <div class="card">
+          <h3>设备信息</h3>
+          <div class="kv"><span class="k">设备型号</span><span class="v" id="sys-model">-</span></div>
+          <div class="kv"><span class="k">固件版本</span><span class="v" id="sys-fw">-</span></div>
+          <div class="kv"><span class="k">固件升级</span><span class="v"><a href="/cgi-bin/luci/admin/system/flash" target="_blank">前往专家模式升级 →</a></span></div>
+        </div>
+        <div class="card">
+          <h3>重启 / 恢复出厂</h3>
+          <div class="hint" style="margin-bottom:14px">重启约需 1 分钟；恢复出厂会清除全部配置（含 Wi-Fi 名称和密码），重启后自动进入快速设置向导。</div>
+          <button class="btn gray" id="btn-reboot">重启路由器</button>
+          <button class="btn red" id="btn-factory" style="margin-left:10px">恢复出厂设置</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="reboot-mask"><div class="box"><div class="spin"></div><div id="reboot-txt">正在重启路由器…</div></div></div>
+
+<script>
+'use strict';
+var API = '/cgi-bin/router?op=';
+var cur = 'overview';
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+function toast(t){ var el=$('toast'); el.textContent=t; el.style.display='block'; clearTimeout(el._t); el._t=setTimeout(function(){el.style.display='none';},2600); }
+function fmtUp(s){ var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60); return (d>0?d+'天':'')+h+'小时'+m+'分钟'; }
+
+function api(op, data, cb) {
+  var opt = { method: op==='status'||op.slice(-3)==='get' ? 'GET' : 'POST', headers:{}, signal: AbortSignal.timeout(12000) };
+  if (opt.method==='POST') {
+    var b=[]; for (var k in (data||{})) b.push(encodeURIComponent(k)+'='+encodeURIComponent(data[k]));
+    opt.body=b.join('&'); opt.headers['Content-Type']='application/x-www-form-urlencoded';
+  }
+  fetch(API+op, opt).then(function(r){ return r.json().then(function(j){ cb(j); }, function(){ cb({ok:false,error:'响应异常'}); }); })
+    .catch(function(e){ cb({ok:false,error:'网络错误：'+e.message}); });
+}
+function needLogin(j){ if(j && j.code===401){ showLogin('登录已过期，请重新登录'); return true; } return false; }
+
+/* ---------- 登录 ---------- */
+function showLogin(msg){
+  $('app').classList.remove('on');
+  $('login-wrap').style.display='flex';
+  $('login-err').textContent=msg||'';
+  setTimeout(function(){ $('login-pass').focus(); },50);
+}
+function doLogin(){
+  var p=$('login-pass').value;
+  if(!p){ $('login-err').textContent='请输入管理密码'; return; }
+  $('login-btn').disabled=true; $('login-err').textContent='';
+  api('login',{password:p},function(j){
+    $('login-btn').disabled=false;
+    if(j.ok){ $('login-wrap').style.display='none'; $('app').classList.add('on'); $('login-pass').value=''; load(cur); }
+    else $('login-err').textContent=j.error||'登录失败';
+  });
+}
+$('login-btn').onclick=doLogin;
+$('login-pass').addEventListener('keydown',function(e){ if(e.key==='Enter') doLogin(); });
+$('logout-btn').onclick=function(){ api('logout',{},function(){ showLogin(''); }); };
+
+/* ---------- 导航 ---------- */
+var navs=document.querySelectorAll('#sidebar .nav');
+for (var i=0;i<navs.length;i++) navs[i].onclick=function(){ go(this.dataset.p); };
+function go(p){
+  if(p==='wizard'){ window.open('/wizard.html','_blank'); return; }
+  cur=p;
+  for (var i=0;i<navs.length;i++) navs[i].classList.toggle('on', navs[i].dataset.p===p);
+  var pgs=document.querySelectorAll('.page');
+  for (var j=0;j<pgs.length;j++) pgs[j].classList.toggle('on', pgs[j].id==='pg-'+p);
+  load(p);
+}
+function load(p){
+  if(p==='overview') loadOverview();
+  else if(p==='wan') loadWan();
+  else if(p==='wifi') loadWifi();
+  else if(p==='lan') loadLan();
+  else if(p==='system') loadSystem();
+}
+
+/* ---------- 总览 ---------- */
+function loadOverview(){
+  api('status',{},function(j){
+    if(needLogin(j)) return;
+    if(!j.ok){ toast(j.error||'获取状态失败'); return; }
+    var w=j.wan;
+    var nb=$('net-banner');
+    if(w.up){ nb.classList.remove('bad'); $('nb-title').textContent='网络已连接';
+      $('nb-desc').textContent='上网方式：'+({dhcp:'自动获得 IP',pppoe:'宽带拨号（PPPoE）',static:'静态 IP'}[w.proto]||w.proto)+(w.ipv4?('　·　IP：'+w.ipv4):'')+(w.gw?('　·　网关：'+w.gw):'');
+    } else { nb.classList.add('bad'); $('nb-title').textContent='网络未连接';
+      $('nb-desc').textContent='请检查光猫/网线，或到「上网设置」检查拨号账号'; }
+    var s=j.sys;
+    $('s-model').textContent=s.model; $('s-fw').textContent=s.firmware;
+    $('s-up').textContent=fmtUp(s.uptime);
+    $('s-temp').textContent=s.temp? s.temp.toFixed(1)+' ℃':'-';
+    $('s-load').textContent=s.load.join(' / ');
+    var pct=s.mem_total? Math.round((s.mem_total-s.mem_free)*100/s.mem_total):0;
+    $('s-mem').textContent=(s.mem_total/1024).toFixed(0)+' MB 中已用 '+pct+'%';
+    $('s-membar').style.width=pct+'%';
+    var ph={lan1:'网口 1',lan2:'网口 2',lan3:'网口 3',wan:'互联网 (WAN)'};
+    var ph2=$('ports'); ph2.innerHTML='';
+    for (var i=0;i<j.ports.length;i++){
+      var p=j.ports[i];
+      ph2.innerHTML+='<div class="port '+(p.link?'up':'down')+'"><div class="nm">'+ph[p.port]+'</div><div class="st">'+(p.link?'✔':'✕')+'</div><div class="sp">'+(p.link?(p.speed>=1000?(p.speed/1000)+' Gbps':p.speed+' Mbps'):'未连接')+'</div></div>';
+    }
+    var wc=$('wifi-cards'); wc.innerHTML='';
+    for (var k=0;k<j.wifi.length;k++){
+      var r=j.wifi[k];
+      wc.innerHTML+='<div class="wifi-box"><div class="hd"><span class="band">'+r.band+'</span><span style="font-size:12px;color:'+(r.up&&!r.disabled?'#2e9e5b':'#b3bccb')+'">'+(r.disabled?'已关闭':(r.up?'工作中':'未启用'))+'</span></div>'
+        +'<div class="ssid">'+esc(r.ssid||'-')+'</div>'
+        +'<div class="meta">加密：'+({none:'开放',['psk2']:'WPA2',sae:'WPA3','sae-mixed':'WPA2/WPA3'}[r.encryption]||r.encryption)+'　·　信道：'+esc(r.channel||'auto')+'<br>在线终端：'+r.clients+' 台</div></div>';
+    }
+    var cb=$('cl-body'); cb.innerHTML='';
+    $('cl-cnt').textContent='共 '+j.clients.length+' 台';
+    if(!j.clients.length) cb.innerHTML='<tr><td colspan="4" style="text-align:center;color:#98a1b3;padding:18px">暂无终端连接</td></tr>';
+    for (var m=0;m<j.clients.length;m++){
+      var c=j.clients[m];
+      cb.innerHTML+='<tr><td><span class="st '+(c.active?'on':'off')+'"></span></td><td>'+esc(c.name)+'</td><td>'+esc(c.ip)+'</td><td style="color:#8a94a8">'+esc(c.mac.toUpperCase())+'</td></tr>';
+    }
+  });
+}
+
+/* ---------- 上网 ---------- */
+function pickWan(v){
+  var rows=document.querySelectorAll('#wan-radios .radio-card');
+  for (var i=0;i<rows.length;i++) rows[i].classList.toggle('on', rows[i].querySelector('input').value===v);
+  $('wan-dhcp').style.display = v==='dhcp'?'':'none';
+  $('wan-pppoe').style.display = v==='pppoe'?'':'none';
+  $('wan-static').style.display = v==='static'?'':'none';
+}
+var wanRadios=document.querySelectorAll('#wan-radios input');
+for (var wi=0;wi<wanRadios.length;wi++) wanRadios[wi].onchange=function(){ pickWan(this.value); };
+function loadWan(){
+  api('wan_get',{},function(j){
+    if(needLogin(j)) return;
+    if(!j.ok) return;
+    pickWan(j.proto||'dhcp');
+    var r=document.querySelector('#wan-radios input[value="'+(j.proto||'dhcp')+'"]');
+    if(r) r.checked=true;
+    $('wan-user').value=j.pppoeuser||'';
+    $('wan-ip').value=j.ip||''; $('wan-mask').value=j.mask||''; $('wan-gw').value=j.gw||''; $('wan-dns').value=j.dns||'';
+  });
+}
+$('wan-save').onclick=function(){
+  var p=document.querySelector('input[name=wanp]:checked').value;
+  var d={proto:p};
+  if(p==='pppoe'){ d.user=$('wan-user').value; d.pass=$('wan-pass').value; }
+  if(p==='static'){ d.ip=$('wan-ip').value; d.mask=$('wan-mask').value; d.gw=$('wan-gw').value; d.dns=$('wan-dns').value; }
+  var m=$('wan-msg'); m.className='msg'; m.textContent='';
+  api('wan_set',d,function(j){
+    if(needLogin(j)) return;
+    m.className='msg '+(j.ok?'ok':'err'); m.textContent=j.ok?(j.msg||'设置成功'):(j.error||'设置失败');
+    if(j.ok) setTimeout(loadOverview,8000);
+  });
+};
+
+/* ---------- Wi-Fi ---------- */
+function loadWifi(){
+  api('wifi_get',{},function(j){
+    if(needLogin(j)) return;
+    if(!j.ok) return;
+    for (var b=0;b<2;b++){
+      var x=j.bands[b]||{};
+      $('wf-en'+b).checked=!x.disabled;
+      $('wf-ssid'+b).value=x.ssid||'';
+      $('wf-key'+b).value='';
+      $('wf-enc'+b).value=x.encryption||'sae-mixed';
+      $('wf-hid'+b).checked=!!x.hidden;
+    }
+  });
+}
+$('wifi-save').onclick=function(){
+  var d={};
+  for (var b=0;b<2;b++){
+    d['en'+b]=$('wf-en'+b).checked?'1':'0';
+    d['ssid'+b]=$('wf-ssid'+b).value;
+    d['key'+b]=$('wf-key'+b).value;
+    d['enc'+b]=$('wf-enc'+b).value;
+    d['hid'+b]=$('wf-hid'+b).checked?'1':'0';
+  }
+  var m=$('wifi-msg'); m.className='msg'; m.textContent='';
+  api('wifi_set',d,function(j){
+    if(needLogin(j)) return;
+    m.className='msg '+(j.ok?'ok':'err'); m.textContent=j.ok?(j.msg||'设置成功'):(j.error||'设置失败');
+  });
+};
+
+/* ---------- LAN ---------- */
+function loadLan(){
+  api('lan_get',{},function(j){
+    if(needLogin(j)) return;
+    if(!j.ok) return;
+    $('lan-ip').value=j.ip; $('lan-dhcp').checked=!!j.dhcp_on;
+    $('lan-start').value=j.start; $('lan-limit').value=j.limit;
+  });
+}
+$('lan-dhcp').onchange=function(){ $('lan-dhcp-opts').style.display=this.checked?'':'none'; };
+$('lan-save').onclick=function(){
+  var m=$('lan-msg'); m.className='msg'; m.textContent='';
+  api('lan_set',{ip:$('lan-ip').value,dhcp_on:$('lan-dhcp').checked?'1':'0',start:$('lan-start').value,limit:$('lan-limit').value},function(j){
+    if(needLogin(j)) return;
+    m.className='msg '+(j.ok?'ok':'err'); m.textContent=j.ok?(j.msg||'设置成功'):(j.error||'设置失败');
+  });
+};
+
+/* ---------- 系统 ---------- */
+function loadSystem(){
+  api('status',{},function(j){
+    if(needLogin(j)) return;
+    if(!j.ok) return;
+    $('sys-model').textContent=j.sys.model; $('sys-fw').textContent=j.sys.firmware;
+  });
+}
+$('ap-save').onclick=function(){
+  var m=$('ap-msg'); m.className='msg'; m.textContent='';
+  if($('ap-pass').value!==$('ap-pass2').value){ m.className='msg err'; m.textContent='两次输入的密码不一致'; return; }
+  api('adminpass',{pass:$('ap-pass').value},function(j){
+    if(needLogin(j)) return;
+    m.className='msg '+(j.ok?'ok':'err'); m.textContent=j.ok?(j.msg||'修改成功'):(j.error||'修改失败');
+    if(j.ok){ $('ap-pass').value=''; $('ap-pass2').value=''; }
+  });
+};
+$('btn-reboot').onclick=function(){
+  if(!confirm('确定要重启路由器吗？')) return;
+  $('reboot-mask').style.display='flex'; $('reboot-txt').textContent='正在重启路由器，请稍候…';
+  api('reboot',{},function(j){
+    setTimeout(function(){ location.href='/'; },15000);
+  });
+};
+$('btn-factory').onclick=function(){
+  if(!confirm('恢复出厂会清除所有配置（含 Wi-Fi 名称密码）！确定继续？')) return;
+  if(!confirm('再次确认：真的要恢复出厂设置吗？')) return;
+  $('reboot-mask').style.display='flex'; $('reboot-txt').textContent='正在恢复出厂设置并重启，约 2 分钟后自动进入快速设置向导…';
+  api('factory',{},function(){ setTimeout(function(){ location.href='/'; },30000); });
+};
+
+/* ---------- 启动 ---------- */
+window.addEventListener('focus',function(){ if($('app').classList.contains('on')&&cur==='overview') loadOverview(); });
+api('status',{},function(j){
+  if(j.ok||j.code!==401){ $('login-wrap').style.display='none'; $('app').classList.add('on'); load(cur); }
+  else showLogin('');
+});
+</script>
+</body>
+</html>
