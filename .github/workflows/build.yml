@@ -1,0 +1,84 @@
+name: build-firmware
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Image Builder (24.10.6 mediatek/filogic)
+        run: |
+          set -eu
+          for u in \
+            "https://downloads.immortalwrt.org/releases/24.10.6/targets/mediatek/filogic/immortalwrt-imagebuilder-24.10.6-mediatek-filogic.Linux-x86_64.tar.zst" \
+            "https://mirror.nju.edu.cn/immortalwrt/releases/24.10.6/targets/mediatek/filogic/immortalwrt-imagebuilder-24.10.6-mediatek-filogic.Linux-x86_64.tar.zst" \
+            "https://mirrors.tuna.tsinghua.edu.cn/immortalwrt/releases/24.10.6/targets/mediatek/filogic/immortalwrt-imagebuilder-24.10.6-mediatek-filogic.Linux-x86_64.tar.zst" ; do
+            if curl -fSL --retry 3 --connect-timeout 20 -o ib.tar.zst "$u" ; then
+              echo "downloaded from $u"
+              break
+            fi
+          done
+          test -s ib.tar.zst
+          zstd -d -q -f ib.tar.zst -o ib.tar
+          tar -xf ib.tar
+          mv immortalwrt-imagebuilder-* ib
+          ls -la ib | head
+
+      - name: Check wizard files
+        run: |
+          set -eu
+          test -f files/www/index.html
+          test -f files/www/wizard.html
+          test -f files/www/cgi-bin/wizard
+          test -f files/www/luci-static/resources/view/status/include/wizard.js
+          test -f files/www/luci-static/resources/view/system/q30-wizard.js
+          test -f files/usr/share/luci/menu.d/luci-q30-wizard.json
+          test -f files/usr/share/rpcd/acl.d/luci-q30-wizard.json
+          test -f files/etc/uci-defaults/99-q30wizard
+          chmod 755 files/www/cgi-bin/wizard files/etc/uci-defaults/99-q30wizard
+          # /etc/config/wizard 必须由 uci-defaults 在首启时生成（恢复出厂后才会再次触发向导）
+          test ! -e files/etc/config/wizard
+          find files -type f | sort
+
+      - name: Build jcg_q30-pro image with wizard
+        run: |
+          set -eu
+          cd ib
+          make image PROFILE=jcg_q30-pro FILES=../files/ 2>&1 | tail -30
+          ls -la bin/targets/mediatek/filogic/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: q30pro-wizard-firmware
+          path: |
+            ib/bin/targets/mediatek/filogic/immortalwrt-*-jcg_q30-pro-squashfs-sysupgrade.itb
+            ib/bin/targets/mediatek/filogic/sha256sums
+          if-no-files-found: error
+
+      - name: Publish image to dist branch
+        run: |
+          set -eu
+          mkdir -p /tmp/dist
+          cp ib/bin/targets/mediatek/filogic/immortalwrt-*-jcg_q30-pro-squashfs-sysupgrade.itb /tmp/dist/
+          cd /tmp/dist
+          sha256sum *.itb > sha256sums.txt
+          cat sha256sums.txt
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -q -b dist
+          git add -A
+          git commit -q -m "build $(date -u +%FT%TZ)"
+          git push -q -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" dist
+          echo "published to dist branch"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
