@@ -86,6 +86,8 @@ function mark_done() {
 	writefile(MARK_FILE, "config main 'main'\n\toption done '1'\n");
 }
 
+// 管理密码（root）应用。注意：向导留空管理密码时不修改，
+// 固件出厂默认 root 密码为 admin（由 uci-defaults 首启脚本设置）。
 function apply_adminpass(pass) {
 	const p = popen('chpasswd 2>/dev/null', 'w');
 	if (p == null)
@@ -154,17 +156,31 @@ function apply_wifi(c, v, errors) {
 	});
 }
 
+// 默认 Wi-Fi 名称 = "Jcq-" + 2.4G radio(phy0) MAC 后四位（大写、无冒号）
+function wifi_mac_suffix() {
+	const raw = readfile('/sys/class/ieee80211/phy0/macaddress');
+	if (raw == null)
+		return '';
+	const clean = uc(replace(replace(raw, /\s+$/, ''), /:/g, ''));
+	return (length(clean) >= 4) ? substr(clean, length(clean) - 4, 4) : '';
+}
+
 function handle_state() {
 	out_headers();
 	const model = readfile('/tmp/sysinfo/model');
 	const done = wizard_done();
 	const pending = firstboot_pending();
+	const suf = wifi_mac_suffix();
 	out_json({
 		done: done,
 		firstboot: pending,
 		// 仅「从未使用过向导的首启阶段」才自动跳转，避免刷机后每次开机都强制跳
 		wizard: (!done && pending),
-		model: (model != null) ? replace(model, /\s+$/, '') : ''
+		model: (model != null) ? replace(model, /\s+$/, '') : '',
+		// 向导页预填默认值：2.4G 与 5G 名称不同、默认 Wi-Fi 密码固定
+		defssid: length(suf) ? 'Jcq-' + suf : '',
+		defssid5: length(suf) ? 'Jcq-' + suf + '-5G' : '',
+		defkey: '12345678'
 	});
 }
 
