@@ -26,15 +26,15 @@ a { color: #2f7dd1; }
 </div>
 <script>
 (function () {
-  var t = setTimeout(function () { location.replace('cgi-bin/luci/'); }, 4000);
-  fetch('cgi-bin/wizard?op=state&mode=firstboot', { cache: 'no-store' })
+  var t = setTimeout(function () { location.replace('app.html'); }, 5000);
+  fetch('cgi-bin/wizard?op=state', { cache: 'no-store' })
     .then(function (r) { return r.json(); })
     .then(function (s) {
       clearTimeout(t);
       if (s && s.wizard) { location.replace('wizard.html'); }
-      else { location.replace('cgi-bin/luci/'); }
+      else { location.replace('app.html'); }
     })
-    .catch(function () { clearTimeout(t); location.replace('cgi-bin/luci/'); });
+    .catch(function () { clearTimeout(t); location.replace('app.html'); });
 })();
 </script>
 </body>
