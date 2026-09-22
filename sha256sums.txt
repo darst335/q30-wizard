@@ -1,0 +1,1 @@
+0de3697f5792ec7db90591bfa74fcec66b899d90c481886bcb35435eb444cf3f  immortalwrt-24.10.6-mediatek-filogic-jcg_q30-pro-squashfs-sysupgrade.itb
